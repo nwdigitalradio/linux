@@ -306,7 +306,7 @@ static inline int aic32x4_get_divs(int mclk, int rate)
 			return i;
 		}
 	}
-	printk(KERN_ERR "aic32x4: master clock and sample rate is not supported\n");
+	printk(KERN_ERR "aic32x4: master clock %d and sample rate %d is not supported\n", mclk, rate);
 	return -EINVAL;
 }
 
@@ -315,6 +315,8 @@ static int aic32x4_set_dai_sysclk(struct snd_soc_dai *codec_dai,
 {
 	struct snd_soc_codec *codec = codec_dai->codec;
 	struct aic32x4_priv *aic32x4 = snd_soc_codec_get_drvdata(codec);
+
+	printk(KERN_ERR "In aic32x4_set_dai_sysclk\n");
 
 	switch (freq) {
 	case AIC32X4_FREQ_12000000:
@@ -333,6 +335,8 @@ static int aic32x4_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 	u8 iface_reg_1;
 	u8 iface_reg_2;
 	u8 iface_reg_3;
+
+	printk(KERN_ERR "In aic32x4_set_dai_fmt\n");
 
 	iface_reg_1 = snd_soc_read(codec, AIC32X4_IFACE1);
 	iface_reg_1 = iface_reg_1 & ~(3 << 6 | 3 << 2);
@@ -392,6 +396,8 @@ static int aic32x4_hw_params(struct snd_pcm_substream *substream,
 	struct aic32x4_priv *aic32x4 = snd_soc_codec_get_drvdata(codec);
 	u8 data;
 	int i;
+
+	printk(KERN_ERR "In aic32x4_hw_params\n");
 
 	i = aic32x4_get_divs(aic32x4->sysclk, params_rate(params));
 	if (i < 0) {
@@ -484,6 +490,8 @@ static int aic32x4_mute(struct snd_soc_dai *dai, int mute)
 	struct snd_soc_codec *codec = dai->codec;
 	u8 dac_reg;
 
+	printk(KERN_ERR "In aic32x4_mute\n");
+
 	dac_reg = snd_soc_read(codec, AIC32X4_DACMUTE) & ~AIC32X4_MUTEON;
 	if (mute)
 		snd_soc_write(codec, AIC32X4_DACMUTE, dac_reg | AIC32X4_MUTEON);
@@ -498,8 +506,11 @@ static int aic32x4_set_bias_level(struct snd_soc_codec *codec,
 	struct aic32x4_priv *aic32x4 = snd_soc_codec_get_drvdata(codec);
 	int ret;
 
+	printk(KERN_ERR "In aic32x4_set_bias_level\n");
+
 	switch (level) {
 	case SND_SOC_BIAS_ON:
+		printk(KERN_ERR "Setting bias on");
 		/* Switch on master clock */
 		ret = clk_prepare_enable(aic32x4->mclk);
 		if (ret) {
@@ -534,6 +545,7 @@ static int aic32x4_set_bias_level(struct snd_soc_codec *codec,
 	case SND_SOC_BIAS_PREPARE:
 		break;
 	case SND_SOC_BIAS_STANDBY:
+		printk(KERN_ERR "Setting bias to standby");
 		/* Switch off BCLK_N Divider */
 		snd_soc_update_bits(codec, AIC32X4_BCLKN,
 				    AIC32X4_BCLKEN, 0);
@@ -559,7 +571,8 @@ static int aic32x4_set_bias_level(struct snd_soc_codec *codec,
 				    AIC32X4_PLLEN, 0);
 
 		/* Switch off master clock */
-		clk_disable_unprepare(aic32x4->mclk);
+		if(codec->dapm.bias_level == SND_SOC_BIAS_ON)
+			clk_disable_unprepare(aic32x4->mclk);
 		break;
 	case SND_SOC_BIAS_OFF:
 		break;
@@ -608,6 +621,9 @@ static int aic32x4_probe(struct snd_soc_codec *codec)
 
 	snd_soc_write(codec, AIC32X4_RESET, 0x01);
 
+	//  Need to wait 1ms after reset per the datasheet
+	msleep(1);
+
 	/* Power platform configuration */
 	if (aic32x4->power_cfg & AIC32X4_PWR_MICBIAS_2075_LDOIN) {
 		snd_soc_write(codec, AIC32X4_MICBIAS, AIC32X4_MICBIAS_LDOIN |
@@ -625,6 +641,15 @@ static int aic32x4_probe(struct snd_soc_codec *codec)
 		tmp_reg |= AIC32X4_LDOIN_18_36;
 	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED)
 		tmp_reg |= AIC32X4_LDOIN2HP;
+	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_125V)
+		tmp_reg |= AIC32X4_LDOIN_HP_125V;
+	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_15V)
+		tmp_reg |= AIC32X4_LDOIN_HP_15V;
+	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_165V)
+		tmp_reg |= AIC32X4_LDOIN_HP_165V;
+	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_LO_LDOIN_POWERED)
+		tmp_reg |= AIC32X4_LDOIN2LO;
+
 	snd_soc_write(codec, AIC32X4_CMMODE, tmp_reg);
 
 	/* Mic PGA routing */
@@ -673,12 +698,25 @@ static int aic32x4_parse_dt(struct aic32x4_priv *aic32x4,
 	aic32x4->swapdacs = false;
 	aic32x4->micpga_routing = 0;
 	aic32x4->rstn_gpio = of_get_named_gpio(np, "reset-gpios", 0);
+	
+	//  XXX This should be settable through the device tree.
+	//  XXX We should be able to query the regulator to see its voltage too.
+	aic32x4->power_cfg |= AIC32X4_PWR_AVDD_DVDD_WEAK_DISABLE;
+	aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED;
+	aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_LDOIN_RANGE_18_36;
+	aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_165V;
+	aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_LO_LDOIN_POWERED;
+	
+	//  XXX This should be through the device tree, maybe the pin interface
+	aic32x4->micpga_routing = AIC32X4_MICPGA_ROUTE_LMIC_IN2R_10K |
+	                          AIC32X4_MICPGA_ROUTE_RMIC_IN1L_10K;
 
 	return 0;
 }
 
 static void aic32x4_disable_regulators(struct aic32x4_priv *aic32x4)
 {
+
 	regulator_disable(aic32x4->supply_iov);
 
 	if (!IS_ERR(aic32x4->supply_ldo))
@@ -797,17 +835,20 @@ static int aic32x4_i2c_probe(struct i2c_client *i2c,
 	i2c_set_clientdata(i2c, aic32x4);
 
 	if (pdata) {
+		printk(KERN_ERR "Have pdata");
 		aic32x4->power_cfg = pdata->power_cfg;
 		aic32x4->swapdacs = pdata->swapdacs;
 		aic32x4->micpga_routing = pdata->micpga_routing;
 		aic32x4->rstn_gpio = pdata->rstn_gpio;
 	} else if (np) {
+		printk(KERN_ERR "Have DT");
 		ret = aic32x4_parse_dt(aic32x4, np);
 		if (ret) {
 			dev_err(&i2c->dev, "Failed to parse DT node\n");
 			return ret;
 		}
 	} else {
+		printk(KERN_ERR "Have None");
 		aic32x4->power_cfg = 0;
 		aic32x4->swapdacs = false;
 		aic32x4->micpga_routing = 0;
