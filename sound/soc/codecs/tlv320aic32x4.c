@@ -708,8 +708,8 @@ static int aic32x4_parse_dt(struct aic32x4_priv *aic32x4,
 	aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_LO_LDOIN_POWERED;
 	
 	//  XXX This should be through the device tree, maybe the pin interface
-	aic32x4->micpga_routing = AIC32X4_MICPGA_ROUTE_LMIC_IN2R_10K |
-	                          AIC32X4_MICPGA_ROUTE_RMIC_IN1L_10K;
+	/* aic32x4->micpga_routing = AIC32X4_MICPGA_ROUTE_LMIC_IN2R_10K |
+	                          AIC32X4_MICPGA_ROUTE_RMIC_IN1L_10K; */
 
 	return 0;
 }
