@@ -693,23 +693,61 @@ static struct snd_soc_codec_driver soc_codec_dev_aic32x4 = {
 };
 
 static int aic32x4_parse_dt(struct aic32x4_priv *aic32x4,
-		struct device_node *np)
+		struct device_node *np, struct device *dev)
 {
+	int ldo_voltage = regulator_get_voltage(aic32x4->supply_ldo);
+	int common_mode_voltage = 0;
+
 	aic32x4->swapdacs = false;
 	aic32x4->micpga_routing = 0;
 	aic32x4->rstn_gpio = of_get_named_gpio(np, "reset-gpios", 0);
-	
-	//  XXX This should be settable through the device tree.
-	//  XXX We should be able to query the regulator to see its voltage too.
-	aic32x4->power_cfg |= AIC32X4_PWR_AVDD_DVDD_WEAK_DISABLE;
-	aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED;
-	aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_LDOIN_RANGE_18_36;
-	aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_165V;
-	aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_LO_LDOIN_POWERED;
-	
+
 	//  XXX This should be through the device tree, maybe the pin interface
 	/* aic32x4->micpga_routing = AIC32X4_MICPGA_ROUTE_LMIC_IN2R_10K |
 	                          AIC32X4_MICPGA_ROUTE_RMIC_IN1L_10K; */
+	                          
+	if(!of_property_read_u32_index(np, "ti,common-mode-microvolt", 0, &common_mode_voltage)) {
+		switch(common_mode_voltage) {
+			case 1250000:
+				aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_125V;
+				break;
+			case 1500000:
+				aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_15V;
+				break;
+			case 1650000:
+				aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_165V;
+				break;
+			default:
+				dev_err(dev, "Invalid common mode voltage\n");
+				break;
+		}
+	}
+	
+	if(of_get_property(np, "ti,avdd-weak-disable", NULL))
+		aic32x4->power_cfg |= AIC32X4_PWR_AVDD_DVDD_WEAK_DISABLE;
+	else
+		aic32x4->power_cfg &= ~(AIC32X4_PWR_AVDD_DVDD_WEAK_DISABLE);
+		
+	if(!IS_ERR(aic32x4->supply_ldo)) {
+		if(ldo_voltage >= 1800000 && ldo_voltage <= 3600000) {
+			aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_LDOIN_RANGE_18_36;
+		} else if(ldo_voltage >= 1500000 && ldo_voltage < 1800000) {
+			aic32x4->power_cfg &= ~(AIC32X4_PWR_CMMODE_LDOIN_RANGE_18_36);
+		} else {
+			dev_err(dev, "LDO Voltage is out of range\n");
+			return -EPROBE_DEFER;
+		}
+		
+		if(of_get_property(np, "ti,hp-ldoin-powered", NULL))
+			aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED;
+		else
+			aic32x4->power_cfg &= ~(AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED);
+			
+		if(of_get_property(np, "ti,lo-ldoin-powered", NULL))
+			aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_LO_LDOIN_POWERED;
+		else
+			aic32x4->power_cfg &= ~(AIC32X4_PWR_CMMODE_LO_LDOIN_POWERED);
+	}
 
 	return 0;
 }
@@ -729,11 +767,9 @@ static void aic32x4_disable_regulators(struct aic32x4_priv *aic32x4)
 		regulator_disable(aic32x4->supply_av);
 }
 
-static int aic32x4_setup_regulators(struct device *dev,
+static int aic32x4_configure_regulators(struct device *dev,
 		struct aic32x4_priv *aic32x4)
 {
-	int ret = 0;
-
 	aic32x4->supply_ldo = devm_regulator_get_optional(dev, "ldoin");
 	aic32x4->supply_iov = devm_regulator_get(dev, "iov");
 	aic32x4->supply_dv = devm_regulator_get_optional(dev, "dv");
@@ -766,6 +802,14 @@ static int aic32x4_setup_regulators(struct device *dev,
 				PTR_ERR(aic32x4->supply_av) == -EPROBE_DEFER)
 			return -EPROBE_DEFER;
 	}
+
+	return 0;
+}
+
+static int aic32x4_setup_regulators(struct device *dev,
+		struct aic32x4_priv *aic32x4)
+{
+	int ret = 0;
 
 	ret = regulator_enable(aic32x4->supply_iov);
 	if (ret) {
@@ -834,6 +878,12 @@ static int aic32x4_i2c_probe(struct i2c_client *i2c,
 
 	i2c_set_clientdata(i2c, aic32x4);
 
+	ret = aic32x4_configure_regulators(&i2c->dev, aic32x4);
+	if (ret) {
+		dev_err(&i2c->dev, "Failed to configure regulators\n");
+		return ret;
+	}
+
 	if (pdata) {
 		printk(KERN_ERR "Have pdata");
 		aic32x4->power_cfg = pdata->power_cfg;
@@ -842,7 +892,7 @@ static int aic32x4_i2c_probe(struct i2c_client *i2c,
 		aic32x4->rstn_gpio = pdata->rstn_gpio;
 	} else if (np) {
 		printk(KERN_ERR "Have DT");
-		ret = aic32x4_parse_dt(aic32x4, np);
+		ret = aic32x4_parse_dt(aic32x4, np, &i2c->dev);
 		if (ret) {
 			dev_err(&i2c->dev, "Failed to parse DT node\n");
 			return ret;

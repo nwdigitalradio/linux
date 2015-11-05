@@ -54,11 +54,20 @@
             tlv320aic32x4@18 {
                 compatible = "ti,tlv320aic32x4";
                 reg = <0x18>;
+                status = "okay";
+
                 clocks = <&udrc0_osc>;
                 clock-names = "mclk";
-                status = "okay";
+
                 iov-supply = <&udrc0_ldoin>;
                 ldoin-supply = <&udrc0_ldoin>;
+
+				ti,hp-ldoin-powered;
+				ti,lo-ldoin-powered;
+
+				ti,avdd-weak-disable;
+				
+				ti,common-mode-microvolt = <1650000>;
             };
         };
     };
