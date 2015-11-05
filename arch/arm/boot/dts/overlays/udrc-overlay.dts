@@ -28,12 +28,18 @@
     fragment@2 {
         target-path = "/";
         __overlay__ {
-            udrc0_ldoin: udrc0_ldoin {
-                compatible = "regulator-fixed";
-                regulator-name = "ldoin";
-                regulator-min-microvolt = <3300000>;
-                regulator-max-microvolt = <3300000>;
-                regulator-always-on;
+            regulators {
+                compatible = "simple-bus";
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                udrc0_ldoin: udrc0_ldoin {
+                    compatible = "regulator-fixed";
+                    regulator-name = "ldoin";
+                    regulator-min-microvolt = <3300000>;
+                    regulator-max-microvolt = <3300000>;
+                    regulator-always-on;
+                };
             };
         };
     };
