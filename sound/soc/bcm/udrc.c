@@ -59,7 +59,7 @@ static struct snd_soc_dai_link snd_rpi_udrc_dai[] = {
     .codec_dai_name = "tlv320aic32x4-hifi",
     .platform_name  = "bcm2708-i2s.0",
     .codec_name     = "tlv320aic32x4.1-0018",
-    .dai_fmt        = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBS_CFS,
+    .dai_fmt        = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBM_CFM,
     .ops            = &snd_rpi_udrc_ops,
     .init           = snd_rpi_udrc_init,
 },
