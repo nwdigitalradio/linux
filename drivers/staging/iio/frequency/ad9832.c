@@ -14,6 +14,7 @@
 #include <linux/regulator/consumer.h>
 #include <linux/err.h>
 #include <linux/module.h>
+#include <linux/clk.h>
 #include <asm/div64.h>
 
 #include <linux/iio/iio.h>
@@ -205,29 +206,50 @@ static int ad9832_probe(struct spi_device *spi)
 	struct iio_dev *indio_dev;
 	struct ad9832_state *st;
 	struct regulator *reg;
+	struct device_node *np = spi->dev.of_node;
 	int ret;
-
-	if (!pdata) {
-		dev_dbg(&spi->dev, "no platform data?\n");
+	unsigned long mclk = 0;
+	unsigned long freq[2] = { 10000000, 11000000 };
+	unsigned short phase[4] = { 0, 0, 0, 0 };
+	
+	if(pdata) {
+		mclk = pdata->mclk;
+		freq[0] = pdata->freq0;
+		freq[1] = pdata->freq1;
+		phase[0] = pdata->phase0;
+		phase[1] = pdata->phase1;
+		phase[2] = pdata->phase2;
+		phase[3] = pdata->phase3;
+	} else if(np) {
+		mclk = clk_get_rate(devm_clk_get(&spi->dev, "mclk"));
+		if(mclk == 0) {
+			dev_err(&spi->dev, "No master clock defined\n");
+			return -ENODEV;
+		}
+		of_property_read_u32_array(np, "adi,power-up-frequencies", (u32 *) freq, 2);
+		of_property_read_u16_array(np, "adi,power-up-phases", (u16 *) phase, 4);
+	} else {
+		dev_err(&spi->dev, "No platform data.\n");
 		return -ENODEV;
 	}
-
+	
 	reg = devm_regulator_get(&spi->dev, "vcc");
 	if (!IS_ERR(reg)) {
 		ret = regulator_enable(reg);
 		if (ret)
 			return ret;
 	}
-
+	
 	indio_dev = devm_iio_device_alloc(&spi->dev, sizeof(*st));
 	if (!indio_dev) {
 		ret = -ENOMEM;
 		goto error_disable_reg;
 	}
+	
 	spi_set_drvdata(spi, indio_dev);
 	st = iio_priv(indio_dev);
+	st->mclk = mclk;
 	st->reg = reg;
-	st->mclk = pdata->mclk;
 	st->spi = spi;
 
 	indio_dev->dev.parent = &spi->dev;
@@ -280,27 +302,27 @@ static int ad9832_probe(struct spi_device *spi)
 		goto error_disable_reg;
 	}
 
-	ret = ad9832_write_frequency(st, AD9832_FREQ0HM, pdata->freq0);
+	ret = ad9832_write_frequency(st, AD9832_FREQ0HM, freq[0]);
 	if (ret)
 		goto error_disable_reg;
 
-	ret = ad9832_write_frequency(st, AD9832_FREQ1HM, pdata->freq1);
+	ret = ad9832_write_frequency(st, AD9832_FREQ1HM, freq[1]);
 	if (ret)
 		goto error_disable_reg;
 
-	ret = ad9832_write_phase(st, AD9832_PHASE0H, pdata->phase0);
+	ret = ad9832_write_phase(st, AD9832_PHASE0H, phase[0]);
 	if (ret)
 		goto error_disable_reg;
 
-	ret = ad9832_write_phase(st, AD9832_PHASE1H, pdata->phase1);
+	ret = ad9832_write_phase(st, AD9832_PHASE1H, phase[1]);
 	if (ret)
 		goto error_disable_reg;
 
-	ret = ad9832_write_phase(st, AD9832_PHASE2H, pdata->phase2);
+	ret = ad9832_write_phase(st, AD9832_PHASE2H, phase[2]);
 	if (ret)
 		goto error_disable_reg;
 
-	ret = ad9832_write_phase(st, AD9832_PHASE3H, pdata->phase3);
+	ret = ad9832_write_phase(st, AD9832_PHASE3H, phase[3]);
 	if (ret)
 		goto error_disable_reg;
 
@@ -328,6 +350,13 @@ static int ad9832_remove(struct spi_device *spi)
 
 	return 0;
 }
+
+static const struct of_device_id ad9832_of_id[] = {
+	{ .compatible = "adi,ad9832", },
+	{ .compatible = "adi,ad9835", },
+	{ /* senitel */ }
+};
+MODULE_DEVICE_TABLE(of, ad9832_of_id);
 
 static const struct spi_device_id ad9832_id[] = {
 	{"ad9832", 0},

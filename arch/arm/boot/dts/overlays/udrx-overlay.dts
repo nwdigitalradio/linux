@@ -88,24 +88,32 @@
                 iov-supply = <&udrc0_ldoin>;
                 ldoin-supply = <&udrc0_ldoin>;
 
-		ti,hp-ldoin-powered;
-		ti,lo-ldoin-powered;
+				ti,hp-ldoin-powered;
+				ti,lo-ldoin-powered;
 
-		ti,avdd-weak-disable;
+				ti,avdd-weak-disable;
 		
-		ti,common-mode-microvolt = <1650000>;
+				ti,common-mode-microvolt = <1650000>;
             };
 
             spidev@0 {
                 status = "disabled";
             };
-
-            spidev@2 {
+            
+            ad9832@2 {
                 #address-cells = <1>;
                 #size-cells = <0>;
-                compatible = "spidev";
+                compatible = "adi,ad9832";
                 reg = <2>;
+                status = "okay";
+                
                 spi-max-frequency = <500000>;
+                spi-cpha;
+
+                clocks = <&udrc0_osc>;
+                clock-names = "mclk";
+                
+                vcc-supply = <&udrc0_ldoin>;                
             };
 
             spidev@3 {
