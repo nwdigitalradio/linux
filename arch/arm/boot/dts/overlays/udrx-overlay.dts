@@ -1,0 +1,130 @@
+/*
+ * Device tree overlay for the Universal Digital Radio Controller
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "brcm,bcm2835", "brcm,bcm2836", "brcm,bcm2708", "brcm,bcm2709";
+    fragment@0 {
+        target-path = "/clocks";
+        __overlay__ {
+            udrc0_osc: udrc0_osc {
+                compatible = "fixed-clock";
+                #clock-cells = <0>;
+                clock-frequency = <25000000>;
+            };
+        };
+    };
+
+    fragment@1 {
+        target = <&i2s>;
+        __overlay__ {
+            status = "okay";
+        };
+    };
+
+    fragment@2 {
+        target-path = "/";
+        __overlay__ {
+            regulators {
+                compatible = "simple-bus";
+                #address-cells = <1>;
+                #size-cells = <0>;
+
+                udrc0_ldoin: udrc0_ldoin {
+                    compatible = "regulator-fixed";
+                    regulator-name = "ldoin";
+                    regulator-min-microvolt = <3300000>;
+                    regulator-max-microvolt = <3300000>;
+                    regulator-always-on;
+                };
+            };
+        };
+    };
+
+    fragment@3 {
+        target = <&i2c1>;
+        __overlay__ {
+            #address-cells = <1>;
+            #size-cells = <0>;
+            status = "okay";
+        };
+    };
+
+    fragment@4 {
+		target = <&sound>;
+		__overlay__ {
+			compatible = "nwdr,udrc";
+			i2s-controller = <&i2s>;
+			status = "okay";
+		};
+    };
+
+
+    fragment@5 {
+        target = <&spi0>;
+        __overlay__ {
+            #address-cells = <1>;
+            #size-cells = <0>;
+            pinctrl-0 = <&spi0_pins &spi0_cs_pins>;
+            status = "okay";
+            cs-gpios = <0>, <0>, <&gpio 17 1>, <&gpio 27 1>;
+
+            tlv320aic32x4@0 {
+                #address-cells = <1>;
+                #size-cells = <0>;
+                compatible = "ti,tlv320aic32x4";
+                reg = <0>;
+                status = "okay";
+
+                spi-max-frequency = <500000>;
+                spi-cpha;
+
+                clocks = <&udrc0_osc>;
+                clock-names = "mclk";
+
+                iov-supply = <&udrc0_ldoin>;
+                ldoin-supply = <&udrc0_ldoin>;
+
+		ti,hp-ldoin-powered;
+		ti,lo-ldoin-powered;
+
+		ti,avdd-weak-disable;
+		
+		ti,common-mode-microvolt = <1650000>;
+            };
+
+            spidev@0 {
+                status = "disabled";
+            };
+
+            spidev@2 {
+                #address-cells = <1>;
+                #size-cells = <0>;
+                compatible = "spidev";
+                reg = <2>;
+                spi-max-frequency = <500000>;
+            };
+
+            spidev@3 {
+                #address-cells = <1>;
+                #size-cells = <0>;
+                compatible = "spidev";
+                reg = <3>;
+                spi-max-frequency = <500000>;
+            };
+        };
+    };
+
+    fragment@6 {
+        target = <&gpio>;
+        __overlay__ {
+            spi0_cs_pins: spi0_cs_pins {
+                brcm,pins = <17 27>;
+                brcm,function = <1>;
+            };
+        };
+    };
+};
