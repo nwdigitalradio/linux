@@ -288,15 +288,6 @@ static const struct regmap_range_cfg aic32x4_regmap_pages[] = {
 	},
 };
 
-static const struct regmap_config aic32x4_regmap = {
-	.reg_bits = 8,
-	.val_bits = 8,
-
-	.max_register = AIC32X4_RMICPGAVOL,
-	.ranges = aic32x4_regmap_pages,
-	.num_ranges = ARRAY_SIZE(aic32x4_regmap_pages),
-};
-
 static inline int aic32x4_get_divs(int mclk, int rate)
 {
 	int i;
@@ -868,6 +859,16 @@ static const struct of_device_id aic32x4_of_id[] = {
 MODULE_DEVICE_TABLE(of, aic32x4_of_id);
 
 #if defined(CONFIG_I2C) || defined(CONFIG_I2C_MODULE)
+
+static const struct regmap_config aic32x4_i2c_regmap = {
+	.reg_bits = 8,
+	.val_bits = 8,
+
+	.max_register = AIC32X4_RMICPGAVOL,
+	.ranges = aic32x4_regmap_pages,
+	.num_ranges = ARRAY_SIZE(aic32x4_regmap_pages),
+};
+
 static int aic32x4_i2c_probe(struct i2c_client *i2c,
 			     const struct i2c_device_id *id)
 {
@@ -881,7 +882,7 @@ static int aic32x4_i2c_probe(struct i2c_client *i2c,
 	if (aic32x4 == NULL)
 		return -ENOMEM;
 
-	aic32x4->regmap = devm_regmap_init_i2c(i2c, &aic32x4_regmap);
+	aic32x4->regmap = devm_regmap_init_i2c(i2c, &aic32x4_i2c_regmap);
 	if (IS_ERR(aic32x4->regmap))
 		return PTR_ERR(aic32x4->regmap);
 
@@ -975,6 +976,18 @@ static struct i2c_driver aic32x4_i2c_driver = {
 #endif
 
 #if defined(CONFIG_SPI_MASTER)
+
+static const struct regmap_config aic32x4_spi_regmap = {
+	.reg_bits = 7,
+	.pad_bits = 1,
+	.val_bits = 8,
+	.read_flag_mask = 0x01,
+
+	.max_register = AIC32X4_RMICPGAVOL,
+	.ranges = aic32x4_regmap_pages,
+	.num_ranges = ARRAY_SIZE(aic32x4_regmap_pages),
+};
+
 static int aic32x4_spi_probe(struct spi_device *spi)
 {
 	struct aic32x4_pdata *pdata = spi->dev.platform_data;
@@ -987,7 +1000,7 @@ static int aic32x4_spi_probe(struct spi_device *spi)
 	if (aic32x4 == NULL)
 		return -ENOMEM;
 
-	aic32x4->regmap = devm_regmap_init_spi(spi, &aic32x4_regmap);
+	aic32x4->regmap = devm_regmap_init_spi(spi, &aic32x4_spi_regmap);
 	if (IS_ERR(aic32x4->regmap))
 		return PTR_ERR(aic32x4->regmap);
 
