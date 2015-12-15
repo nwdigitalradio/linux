@@ -43,6 +43,7 @@ static DEVICE_ATTR(rcounter, S_IWUSR, NULL, rcounter_store);
 static int adf4360_probe(struct spi_device *spi) {
 	struct adf4360_state *st;
 	int i;
+	int ret;
 	
 	// XXX need to deal with pdata here
 	
@@ -65,11 +66,15 @@ static int adf4360_probe(struct spi_device *spi) {
 	
 	st->regs[0] = 0x00000001;
 
-	sysfs_create_file(&spi->dev.kobj, &dev_attr_rcounter);
+	ret = device_create_file(&spi->dev, &dev_attr_rcounter);
+	if(ret > 0)
+		dev_err(&spi->dev, "Couldn't create rcounter device file"); 
+	
+	return 0;
 }
 
 static int adf4360_remove(struct spi_device *spi) {
-	struct ad4360_state *st = spi_get_drvdata(spi);
+	// struct ad4360_state *st = spi_get_drvdata(spi);
 	
 	return 0;
 }
