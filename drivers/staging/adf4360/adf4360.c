@@ -21,20 +21,41 @@
 struct adf4360_state {
 	struct spi_device				*spi;
 	struct adf4360_platform_data	*pdata;
-	__be32							regs[3] ____cacheline_aligned;  // XXX be?
+	__be32							reg[3] ____cacheline_aligned;  // XXX be?
 	
 	struct spi_transfer				xfer[3];
 	struct spi_message				message;
 	
+	u16								rcounter;
+	u8								band_select;
+	u8								anti_backlash;
+	u8								lock_precision;
+	
 };
 
 static int adf4360_sync_config(struct adf4360_state *st) {
+	u32 reg = 0;
+	
+	//  Set the R register settings
+	reg = ADF4360_R_REG | 
+          ADF4360_REG1_BAND_SELECT_CLOCK(st->band_select) |
+          ADF4360_REG1_ANTI_BACKLASH(st->anti_backlash) |
+          ADF4360_REG1_R_COUNTER(st->rcounter);
+	if(st->lock_precision)
+		reg |= ADF4360_REG1_LOCK_PRECISION_5_CYCLES_EN;
+	st->reg[ADF4360_R_REG] = ADF4360_SET_REGISTER(reg);
+
 	return spi_sync(st->spi, &st->message);
 }
 
 static ssize_t rcounter_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) {
 	struct adf4360_state *st = dev_get_drvdata(dev);
 	
+	if(kstrtou16(buf, 0, &st->rcounter)) {
+		dev_err(dev, "Invalid rcounter value\n");
+		return -EFAULT;
+	}
+	                             
 	adf4360_sync_config(st);
 	
 	return count;
@@ -60,19 +81,26 @@ static int adf4360_probe(struct spi_device *spi) {
 	spi_message_init(&st->message);
 	st->xfer[1].delay_usecs = 10000;
 	for(i = 0; i < 3; ++i) {
-		st->xfer[i].tx_buf = &st->regs[i];
+		st->xfer[i].tx_buf = &st->reg[i];
 		st->xfer[i].len = 3;
 		st->xfer[i].cs_change = 1;
 		spi_message_add_tail(&st->xfer[i], &st->message);
 	}
 	
-	st->regs[0] = ADF4360_SET_REGISTER(0x00000001);
-	st->regs[1] = ADF4360_SET_REGISTER(0x00800000);
-	st->regs[2] = ADF4360_SET_REGISTER(0x00555555);
+	st->reg[0] = ADF4360_SET_REGISTER(0x00000001);
+	st->reg[1] = ADF4360_SET_REGISTER(0x00800000);
+	st->reg[2] = ADF4360_SET_REGISTER(0x00555555);
+	
+	// XXX Defaults here -- get from elsewhere probably.
+	st->band_select = 2;
+	st->anti_backlash = 0;
+	st->lock_precision = 1;
 
 	ret = device_create_file(&spi->dev, &dev_attr_rcounter);
 	if(ret > 0)
 		dev_err(&spi->dev, "Couldn't create rcounter device file"); 
+		
+	// XXX Need to do a sync at the end of stuff.
 	
 	return 0;
 }
