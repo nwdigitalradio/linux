@@ -19,7 +19,7 @@
 struct adf4360_state {
 	struct spi_device				*spi;
 	struct adf4360_platform_data	*pdata;
-	u32								regs[3] ____cacheline_aligned;  // XXX be?
+	__be32							regs[3] ____cacheline_aligned;  // XXX be?
 	
 	struct spi_transfer				xfer[3];
 	struct spi_message				message;
@@ -64,8 +64,8 @@ static int adf4360_probe(struct spi_device *spi) {
 		spi_message_add_tail(&st->xfer[i], &st->message);
 	}
 	
-	st->regs[0] = 0x00000001;
-	st->regs[1] = 0x80000000;
+	st->regs[0] = cpu_to_be32(0x00000001);
+	st->regs[1] = cpu_to_be32(0x00800000);
 
 	ret = device_create_file(&spi->dev, &dev_attr_rcounter);
 	if(ret > 0)
