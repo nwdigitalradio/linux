@@ -1,1 +1,1 @@
-obj-$(CONFIG_ADF4360)		+= ad4360.c
+obj-$(CONFIG_ADF4360)		+= adf4360.c
