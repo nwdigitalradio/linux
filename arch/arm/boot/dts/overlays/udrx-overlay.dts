@@ -115,12 +115,14 @@
                 
                 vcc-supply = <&udrc0_ldoin>;                
             };
-
-            spidev@3 {
-                #address-cells = <1>;
+            
+            adf4360@3 {
+            	#address-cells = <1>;
                 #size-cells = <0>;
-                compatible = "spidev";
+                compatible = "adi,adf4360";
                 reg = <3>;
+                status = "okay";
+                
                 spi-max-frequency = <500000>;
             };
         };
