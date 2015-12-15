@@ -90,6 +90,7 @@ static const struct spi_device_id adf4360_id[] = {
 	{"adf4360", 4360},
 	{}
 };
+MODULE_DEVICE_TABLE(spi, adf4360_id);
 
 static struct spi_driver adf4360_driver = {
 	.driver = {
