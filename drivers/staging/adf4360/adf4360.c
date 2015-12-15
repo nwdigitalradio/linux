@@ -21,7 +21,7 @@ struct adf4360_state {
 	struct adf4360_platform_data	*pdata;
 	__be32							regs[3] ____cacheline_aligned;  // XXX be?
 	
-	struct spi_transfer				xfers[3];
+	struct spi_transfer				xfer[3];
 	struct spi_message				message;
 	
 };
@@ -46,7 +46,7 @@ static int adf4360_probe(struct spi_device *spi) {
 	
 	// XXX need to deal with pdata here
 	
-	st = devm_kzalloc(spi->dev, sizeof(*st), GFP_KERNEL);
+	st = devm_kzalloc(&spi->dev, sizeof(*st), GFP_KERNEL);
 	if (!st)
 		return -ENOMEM;
 	
@@ -65,7 +65,7 @@ static int adf4360_probe(struct spi_device *spi) {
 	
 	st->regs[0] = 0x00000001;
 
-	sysfs_create_file(&spi->dev->kobj, &dev_attr_r-counter_name);
+	sysfs_create_file(&spi->dev.kobj, &dev_attr_rcounter);
 }
 
 static int adf4360_remove(struct spi_device *spi) {
@@ -90,7 +90,7 @@ static struct spi_driver adf4360_driver = {
 		.name 	= "adf4360",
 		.owner	= THIS_MODULE,
 		.of_match_table = adf4360_of_id,
-	}
+	},
 	.probe		= adf4360_probe,
 	.remove		= adf4360_remove,
 	.id_table	= adf4360_id,
