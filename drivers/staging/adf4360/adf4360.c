@@ -80,19 +80,24 @@ static const struct of_device_id adf4360_of_id[] = {
 };
 MODULE_DEVICE_TABLE(of, ad9832_of_id);
 
-static const struct spi_device_id ad4360_id[] = {
+static const struct spi_device_id adf4360_id[] = {
 	{"adf4360", 4360},
 	{}
 };
 
-static struct spi_driver adf_4350_driver = {
+static struct spi_driver adf4360_driver = {
 	.driver = {
-		.name 	= "adf4350",
+		.name 	= "adf4360",
 		.owner	= THIS_MODULE,
-		.of_match_table = ad9832_of_id,
+		.of_match_table = ad4360_of_id,
 	}
-	.probe		= adf4350_probe,
-	.remove		= adf4350_remove,
-	.id_table	= adf4350_id,
+	.probe		= adf4360_probe,
+	.remove		= adf4360_remove,
+	.id_table	= adf4360_id,
 };
-module_spi_driver(adf4350_driver);
+module_spi_driver(adf4360_driver);
+
+MODULE_DESCRIPTION("Analog Devices ADF4360 Driver");
+MODULE_AUTHOR("Jeremy McDermond <nh6z@nh6z.net>");
+MODULE_LICENSE("GPL");
+
