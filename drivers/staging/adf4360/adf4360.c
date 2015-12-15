@@ -16,6 +16,8 @@
 
 #include "adf4360.h"
 
+#define ADF4360_SET_REGISTER(x)		cpu_to_be32((x) << 8);
+
 struct adf4360_state {
 	struct spi_device				*spi;
 	struct adf4360_platform_data	*pdata;
@@ -64,8 +66,9 @@ static int adf4360_probe(struct spi_device *spi) {
 		spi_message_add_tail(&st->xfer[i], &st->message);
 	}
 	
-	st->regs[0] = cpu_to_be32(0x00000001 << 8);
-	st->regs[1] = cpu_to_be32(0x00800000 << 8);
+	st->regs[0] = ADF4360_SET_REGISTER(0x00000001);
+	st->regs[1] = ADF4360_SET_REGISTER(0x00800000);
+	st->regs[2] = ADF4360_SET_REGISTER(0x00555555);
 
 	ret = device_create_file(&spi->dev, &dev_attr_rcounter);
 	if(ret > 0)
