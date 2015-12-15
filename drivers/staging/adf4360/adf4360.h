@@ -53,3 +53,5 @@
 struct adf4360_platform_data {
 	char	name[32];
 };
+
+#endif
