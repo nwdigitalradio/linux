@@ -89,6 +89,7 @@ static struct spi_driver adf_4350_driver = {
 	.driver = {
 		.name 	= "adf4350",
 		.owner	= THIS_MODULE,
+		.of_match_table = ad9832_of_id,
 	}
 	.probe		= adf4350_probe,
 	.remove		= adf4350_remove,
