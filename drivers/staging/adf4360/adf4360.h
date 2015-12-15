@@ -40,8 +40,8 @@
 #define ADF4360_REG1_BAND_SELECT_CLOCK(x)			(((x) & 0x03) << 20)
 #define ADF4360_REG1_TEST_MODE_EN					(1 << 19)
 #define ADF4360_REG1_LOCK_PRECISION_5_CYCLES_EN		(1 << 18)
-#define ADF4360_REG1_ANTI_BACKLASH					(((x) & 0x03) << 16)
-#define ADF4360_REG1_N_COUNTER(x)					(((x) & 0x3FFF) << 2)
+#define ADF4360_REG1_ANTI_BACKLASH(x)				(((x) & 0x03) << 16)
+#define ADF4360_REG1_R_COUNTER(x)					(((x) & 0x3FFF) << 2)
 
 //  Register 2 (N Latch) bit definitions
 #define AD4360_REG2_PRESCALAR_INPUT					(1 << 23)
