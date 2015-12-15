@@ -27,18 +27,18 @@ struct adf4360_state {
 };
 
 static int adf4360_sync_config(struct adf4360_state *st) {
-	return spi_sync(&st->spi, &st->message);
+	return spi_sync(st->spi, &st->message);
 }
 
 static ssize_t rcounter_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) {
-	struct ad4360_state *st = dev_get_drvdata(dev);
+	struct adf4360_state *st = dev_get_drvdata(dev);
 	
 	adf4360_sync_config(st);
 	
 	return count;
 }
 
-static DEVICE_ATTR(r-counter, S_IWUSR, NULL, rcounter_store);
+static DEVICE_ATTR(rcounter, S_IWUSR, NULL, rcounter_store);
 
 static int adf4360_probe(struct spi_device *spi) {
 	struct adf4360_state *st;
@@ -46,7 +46,7 @@ static int adf4360_probe(struct spi_device *spi) {
 	
 	// XXX need to deal with pdata here
 	
-	st = devm_kzalloc(dev, sizeof(*st), GFP_KERNEL);
+	st = devm_kzalloc(spi->dev, sizeof(*st), GFP_KERNEL);
 	if (!st)
 		return -ENOMEM;
 	
@@ -63,7 +63,7 @@ static int adf4360_probe(struct spi_device *spi) {
 		spi_message_add_tail(&st->xfer[i], &st->message);
 	}
 	
-	regs[0] = 0x00000001;
+	st->regs[0] = 0x00000001;
 
 	sysfs_create_file(&spi->dev->kobj, &dev_attr_r-counter_name);
 }
@@ -71,14 +71,14 @@ static int adf4360_probe(struct spi_device *spi) {
 static int adf4360_remove(struct spi_device *spi) {
 	struct ad4360_state *st = spi_get_drvdata(spi);
 	
-	kfree(st);
+	return 0;
 }
 
 static const struct of_device_id adf4360_of_id[] = {
 	{ .compatible = "adi,adf4360", },
 	{ /* senitel */ }
 };
-MODULE_DEVICE_TABLE(of, ad9832_of_id);
+MODULE_DEVICE_TABLE(of, adf4360_of_id);
 
 static const struct spi_device_id adf4360_id[] = {
 	{"adf4360", 4360},
@@ -89,7 +89,7 @@ static struct spi_driver adf4360_driver = {
 	.driver = {
 		.name 	= "adf4360",
 		.owner	= THIS_MODULE,
-		.of_match_table = ad4360_of_id,
+		.of_match_table = adf4360_of_id,
 	}
 	.probe		= adf4360_probe,
 	.remove		= adf4360_remove,
