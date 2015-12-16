@@ -20,7 +20,7 @@
 #define ADF4360_REG0_CHARGE_PUMP_CURR1_uA(x)		(((((x) - 31) / 31) & 0x7) << 18)
 #define ADF4360_REG0_CHARGE_PUMP_CURR2_uA(x)		(((((x) - 31) / 31) & 0x7) << 15)
 #define ADF4360_REG0_OUTPUT_PWR(x)					((x) << 12)  // XXX Can this be calculated like current?
-#define ADF4360_REG0_MUTE_TILL_LOCK_EN				(1 << 11)
+#define ADF4360_REG0_MUTE_TIL_LOCK_EN				(1 << 11)
 #define ADF4360_REG0_CP_GAIN						(1 << 10)
 #define ADF4360_REG0_CP_THREESTATE_EN				(1 << 9)
 #define ADF4360_REG0_PD_POLARITY_POS				(1 << 8)
