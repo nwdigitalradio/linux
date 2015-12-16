@@ -16,15 +16,14 @@
 
 #include "adf4360.h"
 
-#define ADF4360_SET_REGISTER(x)		cpu_to_be32((x) << 8);
-
 struct adf4360_state {
 	struct spi_device				*spi;
 	struct adf4360_platform_data	*pdata;
 	__be32							reg[3] ____cacheline_aligned;  // XXX be?
 	
 	struct spi_transfer				xfer[3];
-	struct spi_message				message;
+	struct spi_message				sync_message;
+	struct spi_message				n_message;
 	
 	//  R latch values
 	u16								rcounter;
@@ -53,52 +52,70 @@ struct adf4360_state {
 	u8								cp_gain_perm;
 };
 
-static int adf4360_sync_config(struct adf4360_state *st) {
+static u32 adf4360_construct_reg(struct adf4360_state *st, char regnum) {
 	u32 reg = 0;
 	
-	//  Set the R register settings
-	reg = ADF4360_R_REG | 
-          ADF4360_REG1_BAND_SELECT_CLOCK(st->band_select) |
-          ADF4360_REG1_ANTI_BACKLASH(st->anti_backlash) |
-          ADF4360_REG1_R_COUNTER(st->rcounter);
-	if(st->lock_precision)
-		reg |= ADF4360_REG1_LOCK_PRECISION_5_CYCLES_EN;
-	st->reg[ADF4360_R_REG] = ADF4360_SET_REGISTER(reg);
+	switch(regnum) {
+		case ADF4360_N_REG:
+			reg = ADF4360_N_REG |
+				  ADF4360_REG2_B_COUNTER(st->bcounter) |
+				  ADF4360_REG2_A_COUNTER(st->acounter);
+			if(st->divide_by_2)
+				reg |= ADF4360_REG2_DIVIDE_BY_TWO;
+			if(st->prescaler_input)
+				reg |= ADF4360_REG2_PRESCALER_INPUT;
+			if(st->cp_gain_perm)
+				reg |= ADF4360_REG2_CP_GAIN_PERM;
+			break;
+		case ADF4360_R_REG:
+			reg = ADF4360_R_REG | 
+				  ADF4360_REG1_BAND_SELECT_CLOCK(st->band_select) |
+				  ADF4360_REG1_ANTI_BACKLASH(st->anti_backlash) |
+				  ADF4360_REG1_R_COUNTER(st->rcounter);
+			if(st->lock_precision)
+				reg |= ADF4360_REG1_LOCK_PRECISION_5_CYCLES_EN;
+			break;
+		case ADF4360_CONTROL_REG:
+			reg = ADF4360_CONTROL_REG |
+				  ADF4360_REG0_PRESCALER(st->prescaler) |
+				  ADF4360_REG0_POWERDOWN(st->powerdown) |
+				  ADF4360_REG0_CHARGE_PUMP_CURR1_uA(st->cp_current[0]) |
+				  ADF4360_REG0_CHARGE_PUMP_CURR2_uA(st->cp_current[1]) |
+				  ADF4360_REG0_OUTPUT_PWR(st->output_power) |
+				  ADF4360_REG0_MUXOUT(st->muxout) |
+				  ADF4360_REG0_CORE_POWER_mA(st->core_power);
+			if(st->mute_til_lock)
+				reg |= ADF4360_REG0_MUTE_TIL_LOCK_EN;
+			if(st->cp_gain)
+				reg |= ADF4360_REG0_CP_GAIN;
+			if(st->threestate)
+				reg |= ADF4360_REG0_CP_THREESTATE_EN;
+			if(st->pd_polarity_pos)
+				reg |= ADF4360_REG0_PD_POLARITY_POS;
+			if(st->counter_reset)
+				reg |= ADF4360_REG0_COUNTER_RESET;
+			break;
+		default:
+			dev_err(&st->spi->dev, "Invalid register value: %d", reg);
+			return 0;
+	}
 	
-	//  Set the control register settings
-	reg = ADF4360_CONTROL_REG |
-	      ADF4360_REG0_PRESCALER(st->prescaler) |
-	      ADF4360_REG0_POWERDOWN(st->powerdown) |
-	      ADF4360_REG0_CHARGE_PUMP_CURR1_uA(st->cp_current[0]) |
-	      ADF4360_REG0_CHARGE_PUMP_CURR2_uA(st->cp_current[1]) |
-	      ADF4360_REG0_OUTPUT_PWR(st->output_power) |
-	      ADF4360_REG0_MUXOUT(st->muxout) |
-	      ADF4360_REG0_CORE_POWER_mA(st->core_power);
-	if(st->mute_til_lock)
-		reg |= ADF4360_REG0_MUTE_TIL_LOCK_EN;
-	if(st->cp_gain)
-		reg |= ADF4360_REG0_CP_GAIN;
-	if(st->threestate)
-		reg |= ADF4360_REG0_CP_THREESTATE_EN;
-	if(st->pd_polarity_pos)
-		reg |= ADF4360_REG0_PD_POLARITY_POS;
-	if(st->counter_reset)
-		reg |= ADF4360_REG0_COUNTER_RESET;
-	st->reg[ADF4360_CONTROL_REG] = ADF4360_SET_REGISTER(reg);
+	return cpu_to_be32(reg << 8);
+}
+
+static int adf4360_sync_config(struct adf4360_state *st) {
+	int i;
 	
-	//  Set the N register settings
-	reg = ADF4360_N_REG |
-	      ADF4360_REG2_B_COUNTER(st->bcounter) |
-	      ADF4360_REG2_A_COUNTER(st->acounter);
-	if(st->divide_by_2)
-		reg |= ADF4360_REG2_DIVIDE_BY_TWO;
-	if(st->prescaler_input)
-		reg |= ADF4360_REG2_PRESCALER_INPUT;
-	if(st->cp_gain_perm)
-		reg |= ADF4360_REG2_CP_GAIN_PERM;
-	st->reg[ADF4360_N_REG] = ADF4360_SET_REGISTER(reg);
-	      
-	return spi_sync(st->spi, &st->message);
+	for(i = 0; i < 3; ++i) {
+		st->reg[i] = adf4360_construct_reg(st, i);
+	}
+		      
+	return spi_sync(st->spi, &st->sync_message);
+}
+
+static int adf4360_write_n_register(struct adf4360_state *st) {
+	st->reg[ADF4360_N_REG] = adf4360_construct_reg(st, ADF4360_N_REG);
+	return spi_sync(st->spi, &st->n_message);
 }
 
 static ssize_t rcounter_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) {
@@ -123,7 +140,7 @@ static ssize_t bcounter_store(struct device *dev, struct device_attribute *attr,
 		return -EFAULT;
 	}
 	                             
-	adf4360_sync_config(st);
+	adf4360_write_n_register(st);
 	
 	return count;
 }
@@ -137,7 +154,7 @@ static ssize_t acounter_store(struct device *dev, struct device_attribute *attr,
 		return -EFAULT;
 	}
 	                             
-	adf4360_sync_config(st);
+	adf4360_write_n_register(st);
 	
 	return count;
 }
@@ -158,17 +175,20 @@ static int adf4360_probe(struct spi_device *spi) {
 	
 	st->spi = spi;
 	
-	spi_message_init(&st->message);
+	spi_message_init(&st->sync_message);
 	st->xfer[1].delay_usecs = 10000;
-	st->xfer[0].tx_buf = &st->reg[1];
-	st->xfer[1].tx_buf = &st->reg[0];
-	st->xfer[2].tx_buf = &st->reg[2];
+	st->xfer[0].tx_buf = &st->reg[ADF4360_R_REG];
+	st->xfer[1].tx_buf = &st->reg[ADF4360_CONTROL_REG];
+	st->xfer[2].tx_buf = &st->reg[ADF4360_N_REG];
 	
 	for(i = 0; i < 3; ++i) {
 		st->xfer[i].len = 3;
 		st->xfer[i].cs_change = 1;
-		spi_message_add_tail(&st->xfer[i], &st->message);
+		spi_message_add_tail(&st->xfer[i], &st->sync_message);
 	}
+	
+	spi_message_init(&st->n_message);
+	spi_message_add_tail(&st->xfer[ADF4360_N_REG], &st->n_message);
 	
 	// XXX Defaults here -- get from elsewhere probably.
 	st->band_select = 2;
