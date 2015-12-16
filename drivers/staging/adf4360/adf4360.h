@@ -44,11 +44,11 @@
 #define ADF4360_REG1_R_COUNTER(x)					(((x) & 0x3FFF) << 2)
 
 //  Register 2 (N Latch) bit definitions
-#define AD4360_REG2_PRESCALAR_INPUT					(1 << 23)
-#define AD4360_REG2_DIVIDE_BY_2						(1 << 22)
-#define AD4360_REG2_CP_GAIN							(1 << 21)
-#define AD4360_REG2_B_COUNTER(x)					(((x) & 0x1FFF) << 8)
-#define AD4360_REG2_A_COUNTER(x)					(((x) & 0x1F) << 2)
+#define ADF4360_REG2_PRESCALER_INPUT				(1 << 23)
+#define ADF4360_REG2_DIVIDE_BY_TWO					(1 << 22)
+#define ADF4360_REG2_CP_GAIN_PERM					(1 << 21)
+#define ADF4360_REG2_B_COUNTER(x)					(((x) & 0x1FFF) << 8)
+#define ADF4360_REG2_A_COUNTER(x)					(((x) & 0x1F) << 2)
 
 struct adf4360_platform_data {
 	char	name[32];
