@@ -58,6 +58,7 @@ static int adf4360_sync_config(struct adf4360_state *st) {
 		reg |= ADF4360_REG1_LOCK_PRECISION_5_CYCLES_EN;
 	st->reg[ADF4360_R_REG] = ADF4360_SET_REGISTER(reg);
 	
+	//  Set the control register settings
 	reg = ADF4360_CONTROL_REG |
 	      ADF4360_REG0_PRESCALER(st->prescaler) |
 	      ADF4360_REG0_POWERDOWN(st->powerdown) |
@@ -144,7 +145,6 @@ static int adf4360_probe(struct spi_device *spi) {
 	st->threestate = 0;
 	st->pd_polarity_pos = 1;
 	st->counter_reset = 0;
-
 
 	ret = device_create_file(&spi->dev, &dev_attr_rcounter);
 	if(ret > 0)

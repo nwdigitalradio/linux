@@ -17,8 +17,8 @@
 //  Register 0 (control) bit definitions
 #define ADF4360_REG0_PRESCALER(x)					((x) << 22)
 #define ADF4360_REG0_POWERDOWN(x)					(((x) & 0x03) << 20)
-#define ADF4360_REG0_CHARGE_PUMP_CURR1_uA(x)		(((((x) - 31) / 31) & 0x7) << 18)
-#define ADF4360_REG0_CHARGE_PUMP_CURR2_uA(x)		(((((x) - 31) / 31) & 0x7) << 15)
+#define ADF4360_REG0_CHARGE_PUMP_CURR1_uA(x)		(((((x) - 31) / 31) & 0x7) << 17)
+#define ADF4360_REG0_CHARGE_PUMP_CURR2_uA(x)		(((((x) - 31) / 31) & 0x7) << 14)
 #define ADF4360_REG0_OUTPUT_PWR(x)					((x) << 12)  // XXX Can this be calculated like current?
 #define ADF4360_REG0_MUTE_TIL_LOCK_EN				(1 << 11)
 #define ADF4360_REG0_CP_GAIN						(1 << 10)
