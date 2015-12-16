@@ -80,8 +80,11 @@ static int adf4360_probe(struct spi_device *spi) {
 	
 	spi_message_init(&st->message);
 	st->xfer[1].delay_usecs = 10000;
+	st->xfer[0].tx_buf = &st->reg[1];
+	st->xfer[1].tx_buf = &st->reg[0];
+	st->xfer[2].tx_buf = &st->reg[2];
+	
 	for(i = 0; i < 3; ++i) {
-		st->xfer[i].tx_buf = &st->reg[i];
 		st->xfer[i].len = 3;
 		st->xfer[i].cs_change = 1;
 		spi_message_add_tail(&st->xfer[i], &st->message);
