@@ -26,11 +26,24 @@ struct adf4360_state {
 	struct spi_transfer				xfer[3];
 	struct spi_message				message;
 	
+	//  R latch values
 	u16								rcounter;
 	u8								band_select;
 	u8								anti_backlash;
 	u8								lock_precision;
 	
+	//  Control latch values
+	u8 								prescaler;
+	u8								powerdown;
+	u16								cp_current[2];
+	u8								output_power;
+	u8								muxout;
+	u8								core_power;
+	u8								mute_til_lock;
+	u8								cp_gain;
+	u8								threestate;
+	u8								pd_polarity_pos;
+	u8								counter_reset;
 };
 
 static int adf4360_sync_config(struct adf4360_state *st) {
@@ -44,6 +57,26 @@ static int adf4360_sync_config(struct adf4360_state *st) {
 	if(st->lock_precision)
 		reg |= ADF4360_REG1_LOCK_PRECISION_5_CYCLES_EN;
 	st->reg[ADF4360_R_REG] = ADF4360_SET_REGISTER(reg);
+	
+	reg = ADF4360_CONTROL_REG |
+	      ADF4360_REG0_PRESCALER(st->prescaler) |
+	      ADF4360_REG0_POWERDOWN(st->powerdown) |
+	      ADF4360_REG0_CHARGE_PUMP_CURR1_uA(st->cp_current[0]) |
+	      ADF4360_REG0_CHARGE_PUMP_CURR2_uA(st->cp_current[1]) |
+	      ADF4360_REG0_OUTPUT_PWR(st->output_power) |
+	      ADF4360_REG0_MUXOUT(st->muxout) |
+	      ADF4360_REG0_CORE_POWER_mA(st->core_power);
+	if(st->mute_til_lock)
+		reg |= ADF4360_REG0_MUTE_TIL_LOCK_EN;
+	if(st->cp_gain)
+		reg |= ADF4360_REG0_CP_GAIN;
+	if(st->threestate)
+		reg |= ADF4360_REG0_CP_THREESTATE_EN;
+	if(st->pd_polarity_pos)
+		reg |= ADF4360_REG0_PD_POLARITY_POS;
+	if(st->counter_reset)
+		reg |= ADF4360_REG0_COUNTER_RESET;
+	st->reg[ADF4360_CONTROL_REG] = ADF4360_SET_REGISTER(reg);
 
 	return spi_sync(st->spi, &st->message);
 }
@@ -98,6 +131,20 @@ static int adf4360_probe(struct spi_device *spi) {
 	st->band_select = 2;
 	st->anti_backlash = 0;
 	st->lock_precision = 1;
+	
+	st->prescaler = 0;
+	st->powerdown = 0;
+	st->cp_current[0] = 2500;
+	st->cp_current[1] = 2500;
+	st->output_power = 3;
+	st->muxout = ADF4360_MUXOUT_DIGITAL_LOCK_DETECT;
+	st->core_power = 5;
+	st->mute_til_lock = 0;
+	st->cp_gain = 0;
+	st->threestate = 0;
+	st->pd_polarity_pos = 1;
+	st->counter_reset = 0;
+
 
 	ret = device_create_file(&spi->dev, &dev_attr_rcounter);
 	if(ret > 0)
