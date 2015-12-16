@@ -170,10 +170,6 @@ static int adf4360_probe(struct spi_device *spi) {
 		spi_message_add_tail(&st->xfer[i], &st->message);
 	}
 	
-	st->reg[0] = ADF4360_SET_REGISTER(0x00000001);
-	st->reg[1] = ADF4360_SET_REGISTER(0x00800000);
-	st->reg[2] = ADF4360_SET_REGISTER(0x00555555);
-	
 	// XXX Defaults here -- get from elsewhere probably.
 	st->band_select = 2;
 	st->anti_backlash = 0;
@@ -192,9 +188,9 @@ static int adf4360_probe(struct spi_device *spi) {
 	st->pd_polarity_pos = 1;
 	st->counter_reset = 0;
 	
-	st->bcounter = 5906;
-	st->acounter = 0;
-	st->divide_by_2 = 1;
+	st->bcounter = 88;
+	st->acounter = 6;
+	st->divide_by_2 = 0;
 	st->prescaler_input = 0;
 	st->cp_gain_perm = 0;
 
@@ -207,11 +203,8 @@ static int adf4360_probe(struct spi_device *spi) {
 	ret = device_create_file(&spi->dev, &dev_attr_acounter);
 	if(ret > 0)
 		dev_err(&spi->dev, "Couldn't create acounter device file"); 
-
 		
-	// XXX Need to do a sync at the end of stuff.
-	
-	return 0;
+	return adf4360_sync_config(st);
 }
 
 static int adf4360_remove(struct spi_device *spi) {
