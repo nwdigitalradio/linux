@@ -44,6 +44,13 @@ struct adf4360_state {
 	u8								threestate;
 	u8								pd_polarity_pos;
 	u8								counter_reset;
+	
+	// N latch values
+	u16								bcounter;
+	u8								acounter;
+	u8								divide_by_2;
+	u8								prescaler_input;
+	u8								cp_gain_perm;
 };
 
 static int adf4360_sync_config(struct adf4360_state *st) {
@@ -78,7 +85,19 @@ static int adf4360_sync_config(struct adf4360_state *st) {
 	if(st->counter_reset)
 		reg |= ADF4360_REG0_COUNTER_RESET;
 	st->reg[ADF4360_CONTROL_REG] = ADF4360_SET_REGISTER(reg);
-
+	
+	//  Set the N register settings
+	reg = ADF4360_N_REG |
+	      ADF4360_REG2_B_COUNTER(st->bcounter) |
+	      ADF4360_REG2_A_COUNTER(st->acounter);
+	if(st->divide_by_2)
+		reg |= ADF4360_REG2_DIVIDE_BY_TWO;
+	if(st->prescaler_input)
+		reg |= ADF4360_REG2_PRESCALER_INPUT;
+	if(st->cp_gain_perm)
+		reg |= ADF4360_REG2_CP_GAIN_PERM;
+	st->reg[ADF4360_N_REG] = ADF4360_SET_REGISTER(reg);
+	      
 	return spi_sync(st->spi, &st->message);
 }
 
@@ -94,8 +113,35 @@ static ssize_t rcounter_store(struct device *dev, struct device_attribute *attr,
 	
 	return count;
 }
-
 static DEVICE_ATTR(rcounter, S_IWUSR, NULL, rcounter_store);
+
+static ssize_t bcounter_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) {
+	struct adf4360_state *st = dev_get_drvdata(dev);
+	
+	if(kstrtou16(buf, 0, &st->bcounter)) {
+		dev_err(dev, "Invalid bcounter value\n");
+		return -EFAULT;
+	}
+	                             
+	adf4360_sync_config(st);
+	
+	return count;
+}
+static DEVICE_ATTR(bcounter, S_IWUSR, NULL, bcounter_store);
+
+static ssize_t acounter_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) {
+	struct adf4360_state *st = dev_get_drvdata(dev);
+	
+	if(kstrtou8(buf, 0, &st->acounter)) {
+		dev_err(dev, "Invalid bcounter value\n");
+		return -EFAULT;
+	}
+	                             
+	adf4360_sync_config(st);
+	
+	return count;
+}
+static DEVICE_ATTR(acounter, S_IWUSR, NULL, acounter_store);
 
 static int adf4360_probe(struct spi_device *spi) {
 	struct adf4360_state *st;
@@ -145,10 +191,23 @@ static int adf4360_probe(struct spi_device *spi) {
 	st->threestate = 0;
 	st->pd_polarity_pos = 1;
 	st->counter_reset = 0;
+	
+	st->bcounter = 5906;
+	st->acounter = 0;
+	st->divide_by_2 = 1;
+	st->prescaler_input = 0;
+	st->cp_gain_perm = 0;
 
 	ret = device_create_file(&spi->dev, &dev_attr_rcounter);
 	if(ret > 0)
 		dev_err(&spi->dev, "Couldn't create rcounter device file"); 
+	ret = device_create_file(&spi->dev, &dev_attr_bcounter);
+	if(ret > 0)
+		dev_err(&spi->dev, "Couldn't create bcounter device file"); 
+	ret = device_create_file(&spi->dev, &dev_attr_acounter);
+	if(ret > 0)
+		dev_err(&spi->dev, "Couldn't create acounter device file"); 
+
 		
 	// XXX Need to do a sync at the end of stuff.
 	
