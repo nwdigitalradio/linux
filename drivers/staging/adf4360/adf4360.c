@@ -16,6 +16,8 @@
 
 #include "adf4360.h"
 
+#define DEVICE_ATTR_WOGRP(_name) DEVICE_ATTR(_name, S_IWUSR | S_IWGRP, NULL, _name##_store)
+
 struct adf4360_state {
 	struct spi_device				*spi;
 	struct adf4360_platform_data	*pdata;
@@ -131,7 +133,7 @@ static ssize_t rcounter_store(struct device *dev, struct device_attribute *attr,
 	
 	return count;
 }
-static DEVICE_ATTR_WO(rcounter);
+static DEVICE_ATTR_WOGRP(rcounter);
 
 static ssize_t bcounter_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) {
 	struct adf4360_state *st = dev_get_drvdata(dev);
@@ -145,7 +147,7 @@ static ssize_t bcounter_store(struct device *dev, struct device_attribute *attr,
 	
 	return count;
 }
-static DEVICE_ATTR_WO(bcounter);
+static DEVICE_ATTR_WOGRP(bcounter);
 
 static ssize_t acounter_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) {
 	struct adf4360_state *st = dev_get_drvdata(dev);
@@ -159,7 +161,7 @@ static ssize_t acounter_store(struct device *dev, struct device_attribute *attr,
 	
 	return count;
 }
-static DEVICE_ATTR_WO(acounter);
+static DEVICE_ATTR_WOGRP(acounter);
 
 static struct attribute *control_attrs[] = {
 	&dev_attr_rcounter.attr,
@@ -168,9 +170,14 @@ static struct attribute *control_attrs[] = {
 	NULL
 };
 
-static struct attribute_group control_group = {
+static const struct attribute_group control_group = {
 	.name = "control",
 	.attrs = control_attrs,
+};
+
+static const struct attribute_group *device_groups[] = {
+	&control_group,
+	NULL
 };
 
 static int adf4360_probe(struct spi_device *spi) {
@@ -234,14 +241,14 @@ static int adf4360_probe(struct spi_device *spi) {
 	if(ret)
 		dev_err(&spi->dev, "Couldn't sync configuration");
 		
-	if(sysfs_create_group(&spi->dev.kobj, &control_group))
-		dev_err(&spi->dev, "Couldn't register control group");
+	if(sysfs_create_groups(&spi->dev.kobj, device_groups))
+		dev_err(&spi->dev, "Couldn't add device groups");
 			
 	return 0;
 }
 
 static int adf4360_remove(struct spi_device *spi) {
-	// struct ad4360_state *st = spi_get_drvdata(spi);
+	//struct ad4360_state *st = spi_get_drvdata(spi);
 	
 	return 0;
 }
