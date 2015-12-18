@@ -19,7 +19,7 @@
 struct adf4360_state {
 	struct spi_device				*spi;
 	struct adf4360_platform_data	*pdata;
-	__be32							reg[3] ____cacheline_aligned;  // XXX be?
+	__be32							reg[3] ____cacheline_aligned;
 	
 	struct spi_transfer				sync_xfers[3];
 	struct spi_transfer				n_xfer;
@@ -131,7 +131,7 @@ static ssize_t rcounter_store(struct device *dev, struct device_attribute *attr,
 	
 	return count;
 }
-static DEVICE_ATTR(rcounter, S_IWUSR, NULL, rcounter_store);
+static DEVICE_ATTR_WO(rcounter);
 
 static ssize_t bcounter_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) {
 	struct adf4360_state *st = dev_get_drvdata(dev);
@@ -145,7 +145,7 @@ static ssize_t bcounter_store(struct device *dev, struct device_attribute *attr,
 	
 	return count;
 }
-static DEVICE_ATTR(bcounter, S_IWUSR, NULL, bcounter_store);
+static DEVICE_ATTR_WO(bcounter);
 
 static ssize_t acounter_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) {
 	struct adf4360_state *st = dev_get_drvdata(dev);
@@ -159,7 +159,19 @@ static ssize_t acounter_store(struct device *dev, struct device_attribute *attr,
 	
 	return count;
 }
-static DEVICE_ATTR(acounter, S_IWUSR, NULL, acounter_store);
+static DEVICE_ATTR_WO(acounter);
+
+static struct attribute *control_attrs[] = {
+	&dev_attr_rcounter.attr,
+	&dev_attr_bcounter.attr,
+	&dev_attr_acounter.attr,
+	NULL
+};
+
+static struct attribute_group control_group = {
+	.name = "control",
+	.attrs = control_attrs,
+};
 
 static int adf4360_probe(struct spi_device *spi) {
 	struct adf4360_state *st;
@@ -217,20 +229,13 @@ static int adf4360_probe(struct spi_device *spi) {
 	st->divide_by_2 = 0;
 	st->prescaler_input = 0;
 	st->cp_gain_perm = 0;
-
-	ret = device_create_file(&spi->dev, &dev_attr_rcounter);
-	if(ret > 0)
-		dev_err(&spi->dev, "Couldn't create rcounter device file"); 
-	ret = device_create_file(&spi->dev, &dev_attr_bcounter);
-	if(ret > 0)
-		dev_err(&spi->dev, "Couldn't create bcounter device file"); 
-	ret = device_create_file(&spi->dev, &dev_attr_acounter);
-	if(ret > 0)
-		dev_err(&spi->dev, "Couldn't create acounter device file"); 
 	
 	ret = adf4360_sync_config(st);
 	if(ret)
 		dev_err(&spi->dev, "Couldn't sync configuration");
+		
+	if(sysfs_create_group(&spi->dev.kobj, &control_group))
+		dev_err(&spi->dev, "Couldn't register control group");
 			
 	return 0;
 }
