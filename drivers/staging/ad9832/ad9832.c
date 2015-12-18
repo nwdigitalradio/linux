@@ -270,8 +270,9 @@ static int ad9832_probe(struct spi_device *spi)
 			return ret;
 	}
 	
-	*spi->dev.groups = &control_group;
-		
+	if(sysfs_create_group(&spi->dev.kobj, &control_group))
+		dev_err(&spi->dev, "Couldn't register control group");
+				
 	st = devm_kzalloc(&spi->dev, sizeof(*st), GFP_KERNEL);
 	if (!st)
 		return -ENOMEM;
