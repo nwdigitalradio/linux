@@ -21,7 +21,8 @@ struct adf4360_state {
 	struct adf4360_platform_data	*pdata;
 	__be32							reg[3] ____cacheline_aligned;  // XXX be?
 	
-	struct spi_transfer				xfer[3];
+	struct spi_transfer				sync_xfers[3];
+	struct spi_transfer				n_xfer;
 	struct spi_message				sync_message;
 	struct spi_message				n_message;
 	
@@ -176,19 +177,22 @@ static int adf4360_probe(struct spi_device *spi) {
 	st->spi = spi;
 	
 	spi_message_init(&st->sync_message);
-	st->xfer[1].delay_usecs = 10000;
-	st->xfer[0].tx_buf = &st->reg[ADF4360_R_REG];
-	st->xfer[1].tx_buf = &st->reg[ADF4360_CONTROL_REG];
-	st->xfer[2].tx_buf = &st->reg[ADF4360_N_REG];
+	st->sync_xfers[1].delay_usecs = 10000;
+	st->sync_xfers[0].tx_buf = &st->reg[ADF4360_R_REG];
+	st->sync_xfers[1].tx_buf = &st->reg[ADF4360_CONTROL_REG];
+	st->sync_xfers[2].tx_buf = &st->reg[ADF4360_N_REG];
 	
 	for(i = 0; i < 3; ++i) {
-		st->xfer[i].len = 3;
-		st->xfer[i].cs_change = 1;
-		spi_message_add_tail(&st->xfer[i], &st->sync_message);
+		st->sync_xfers[i].len = 3;
+		st->sync_xfers[i].cs_change = 1;
+		spi_message_add_tail(&st->sync_xfers[i], &st->sync_message);
 	}
 	
 	spi_message_init(&st->n_message);
-	spi_message_add_tail(&st->xfer[ADF4360_N_REG], &st->n_message);
+	st->n_xfer.tx_buf = &st->reg[ADF4360_N_REG];
+	st->n_xfer.len = 3;
+	st->n_xfer.cs_change = 1;
+	spi_message_add_tail(&st->n_xfer, &st->n_message);
 	
 	// XXX Defaults here -- get from elsewhere probably.
 	st->band_select = 2;
@@ -223,8 +227,12 @@ static int adf4360_probe(struct spi_device *spi) {
 	ret = device_create_file(&spi->dev, &dev_attr_acounter);
 	if(ret > 0)
 		dev_err(&spi->dev, "Couldn't create acounter device file"); 
-		
-	return adf4360_sync_config(st);
+	
+	ret = adf4360_sync_config(st);
+	if(ret)
+		dev_err(&spi->dev, "Couldn't sync configuration");
+			
+	return 0;
 }
 
 static int adf4360_remove(struct spi_device *spi) {
@@ -240,7 +248,7 @@ static const struct of_device_id adf4360_of_id[] = {
 MODULE_DEVICE_TABLE(of, adf4360_of_id);
 
 static const struct spi_device_id adf4360_id[] = {
-	{"adf4360", 4360},
+	{"adf4360", 0},
 	{}
 };
 MODULE_DEVICE_TABLE(spi, adf4360_id);
