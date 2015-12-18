@@ -389,6 +389,7 @@ static struct spi_driver ad9832_driver = {
 	.driver = {
 		.name	= "ad9832",
 		.owner	= THIS_MODULE,
+		.of_match_table = adf9832_of_id,
 	},
 	.probe		= ad9832_probe,
 	.remove		= ad9832_remove,
