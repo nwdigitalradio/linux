@@ -231,6 +231,11 @@ static struct attribute_group control_group = {
 	.attrs = control_attrs,
 };
 
+static const struct attribute_group *device_groups[] = {
+	&control_group,
+	NULL
+};
+
 static int ad9832_probe(struct spi_device *spi)
 {
 	struct ad9832_platform_data *pdata = spi->dev.platform_data;
@@ -270,8 +275,8 @@ static int ad9832_probe(struct spi_device *spi)
 			return ret;
 	}
 	
-	if(sysfs_create_group(&spi->dev.kobj, &control_group))
-		dev_err(&spi->dev, "Couldn't register control group");
+	if(sysfs_create_groups(&spi->dev.kobj, device_groups))
+		dev_err(&spi->dev, "Couldn't register device attribute groups");
 				
 	st = devm_kzalloc(&spi->dev, sizeof(*st), GFP_KERNEL);
 	if (!st)
