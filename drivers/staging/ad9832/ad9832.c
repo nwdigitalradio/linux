@@ -42,7 +42,7 @@ static ssize_t ad9832_frequencyword_store(struct device *dev, const char *buf,
 	u32 regval;
 	struct ad9832_state *st = dev_get_drvdata(dev);
 
-	ret = kstrtou32(buf, 10, &regval);
+	ret = kstrtou32(buf, 0, &regval);
 	if (ret)
 		return ret;	
 
@@ -85,7 +85,7 @@ static ssize_t ad9832_phaseword_store(struct device *dev, const char *buf,
     u16 phase;
 	struct ad9832_state *st = dev_get_drvdata(dev);
 
-	ret = kstrtou16(buf, 10, &phase);
+	ret = kstrtou16(buf, 0, &phase);
 	if (ret)
 		return ret;
 
@@ -115,7 +115,7 @@ static ssize_t out_enable_store(struct device *dev, struct device_attribute *att
 	u8 enable;
 	struct ad9832_state *st = dev_get_drvdata(dev);
 	
-	ret = kstrtou8(buf, 1, &enable);
+	ret = kstrtou8(buf, 0, &enable);
 	if(ret)
 		return ret;
 		
@@ -141,7 +141,7 @@ static ssize_t frequency_select_store(struct device *dev, struct device_attribut
     u8 select;
     struct ad9832_state *st = dev_get_drvdata(dev);
     
-    ret = kstrtou8(buf, 1, &select);
+    ret = kstrtou8(buf, 0, &select);
     if(ret)
     	return ret;
     
@@ -168,7 +168,7 @@ static ssize_t phase_select_store(struct device *dev, struct device_attribute *a
 	u8 select;
 	struct ad9832_state *st = dev_get_drvdata(dev);
 	
-	ret = kstrtou8(buf, 1, &select);
+	ret = kstrtou8(buf, 0, &select);
 	if(ret)
 		return ret;
 	
@@ -194,7 +194,7 @@ static ssize_t select_source_store(struct device *dev, struct device_attribute *
 	u8 select;
 	struct ad9832_state *st = dev_get_drvdata(dev);
 	
-	ret = kstrtou8(buf, 1, &select);
+	ret = kstrtou8(buf, 0, &select);
 	if(ret)
 		return ret;
 		
