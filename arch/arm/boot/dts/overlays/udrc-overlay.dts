@@ -51,7 +51,7 @@
             #size-cells = <0>;
             status = "okay";
 
-            tlv320aic32x4@18 {
+            tlv320aic32x4: tlv320aic32x4@18 {
                 compatible = "ti,tlv320aic32x4";
                 reg = <0x18>;
                 status = "okay";
@@ -77,6 +77,7 @@
 		__overlay__ {
 			compatible = "nwdr,udrc";
 			i2s-controller = <&i2s>;
+			codec-device = <&tlv320aic32x4>;
 			status = "okay";
 		};
 	};
