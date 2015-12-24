@@ -1032,6 +1032,8 @@ static int aic32x4_spi_probe(struct spi_device *spi)
 		aic32x4->micpga_routing = 0;
 		aic32x4->rstn_gpio = -1;
 	}
+	
+	spi->mode |= SPI_CPHA;
 
 	aic32x4->mclk = devm_clk_get(&spi->dev, "mclk");
 	if (IS_ERR(aic32x4->mclk)) {

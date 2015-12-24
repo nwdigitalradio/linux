@@ -81,7 +81,6 @@
                 status = "okay";
 
                 spi-max-frequency = <500000>;
-                spi-cpha;
 
                 clocks = <&udrc0_osc>;
                 clock-names = "mclk";
