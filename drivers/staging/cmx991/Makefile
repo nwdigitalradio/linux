@@ -1,0 +1,1 @@
+obj-$(CONFIG_CMX991)		+= cmx991.o
