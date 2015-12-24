@@ -23,10 +23,8 @@ struct adf4360_state {
 	struct adf4360_platform_data	*pdata;
 	__be32							reg[3] ____cacheline_aligned;
 	
-	struct spi_transfer				sync_xfers[3];
-	struct spi_transfer				n_xfer;
+	struct spi_transfer				sync_xfers[2];
 	struct spi_message				sync_message;
-	struct spi_message				n_message;
 	
 	//  R latch values
 	u16								rcounter;
@@ -55,7 +53,8 @@ struct adf4360_state {
 	u8								cp_gain_perm;
 };
 
-static u32 adf4360_construct_reg(struct adf4360_state *st, char regnum) {
+static u32 adf4360_construct_reg(struct adf4360_state *st, char regnum) 
+{
 	u32 reg = 0;
 	
 	switch(regnum) {
@@ -106,22 +105,33 @@ static u32 adf4360_construct_reg(struct adf4360_state *st, char regnum) {
 	return cpu_to_be32(reg << 8);
 }
 
-static int adf4360_sync_config(struct adf4360_state *st) {
+static int adf4360_write_n_register(struct adf4360_state *st) 
+{
+	st->reg[ADF4360_N_REG] = adf4360_construct_reg(st, ADF4360_N_REG);
+	return spi_write(st->spi, &st->reg[ADF4360_N_REG], 3);
+}
+
+static int adf4360_sync_config(struct adf4360_state *st) 
+{
 	int i;
+	int ret;
 	
 	for(i = 0; i < 3; ++i) {
 		st->reg[i] = adf4360_construct_reg(st, i);
 	}
-		      
-	return spi_sync(st->spi, &st->sync_message);
+	
+	ret = spi_sync(st->spi, &st->sync_message);
+	if(ret)
+		return ret;
+		
+	msleep(10);
+		
+	return adf4360_write_n_register(st);
 }
 
-static int adf4360_write_n_register(struct adf4360_state *st) {
-	st->reg[ADF4360_N_REG] = adf4360_construct_reg(st, ADF4360_N_REG);
-	return spi_sync(st->spi, &st->n_message);
-}
-
-static ssize_t rcounter_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) {
+static ssize_t rcounter_store(struct device *dev, struct device_attribute *attr, 
+                              const char *buf, size_t count) 
+{
 	struct adf4360_state *st = dev_get_drvdata(dev);
 	
 	if(kstrtou16(buf, 0, &st->rcounter)) {
@@ -135,7 +145,9 @@ static ssize_t rcounter_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_WOGRP(rcounter);
 
-static ssize_t bcounter_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) {
+static ssize_t bcounter_store(struct device *dev, struct device_attribute *attr, 
+                              const char *buf, size_t count) 
+{
 	struct adf4360_state *st = dev_get_drvdata(dev);
 	
 	if(kstrtou16(buf, 0, &st->bcounter)) {
@@ -149,7 +161,9 @@ static ssize_t bcounter_store(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR_WOGRP(bcounter);
 
-static ssize_t acounter_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) {
+static ssize_t acounter_store(struct device *dev, struct device_attribute *attr, 
+                              const char *buf, size_t count) 
+{
 	struct adf4360_state *st = dev_get_drvdata(dev);
 	
 	if(kstrtou8(buf, 0, &st->acounter)) {
@@ -180,9 +194,9 @@ static const struct attribute_group *device_groups[] = {
 	NULL
 };
 
-static int adf4360_probe(struct spi_device *spi) {
+static int adf4360_probe(struct spi_device *spi) 
+{
 	struct adf4360_state *st;
-	int i;
 	int ret;
 	
 	// XXX need to deal with pdata here
@@ -195,24 +209,15 @@ static int adf4360_probe(struct spi_device *spi) {
 	
 	st->spi = spi;
 	
-	spi_message_init(&st->sync_message);
-	st->sync_xfers[1].delay_usecs = 10000;
 	st->sync_xfers[0].tx_buf = &st->reg[ADF4360_R_REG];
+	st->sync_xfers[0].cs_change = 1;
+	st->sync_xfers[0].len = 3;
+	
 	st->sync_xfers[1].tx_buf = &st->reg[ADF4360_CONTROL_REG];
-	st->sync_xfers[2].tx_buf = &st->reg[ADF4360_N_REG];
+	st->sync_xfers[1].len = 3;
 	
-	for(i = 0; i < 3; ++i) {
-		st->sync_xfers[i].len = 3;
-		st->sync_xfers[i].cs_change = 1;
-		spi_message_add_tail(&st->sync_xfers[i], &st->sync_message);
-	}
-	
-	spi_message_init(&st->n_message);
-	st->n_xfer.tx_buf = &st->reg[ADF4360_N_REG];
-	st->n_xfer.len = 3;
-	st->n_xfer.cs_change = 1;
-	spi_message_add_tail(&st->n_xfer, &st->n_message);
-	
+	spi_message_init_with_transfers(&st->sync_message, st->sync_xfers, 2);
+		
 	// XXX Defaults here -- get from elsewhere probably.
 	st->band_select = 2;
 	st->anti_backlash = 0;
@@ -247,7 +252,8 @@ static int adf4360_probe(struct spi_device *spi) {
 	return 0;
 }
 
-static int adf4360_remove(struct spi_device *spi) {
+static int adf4360_remove(struct spi_device *spi) 
+{
 	//struct ad4360_state *st = spi_get_drvdata(spi);
 	
 	return 0;
