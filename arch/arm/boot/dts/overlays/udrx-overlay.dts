@@ -58,6 +58,7 @@
 		__overlay__ {
 			compatible = "nwdr,udrc";
 			i2s-controller = <&i2s>;
+			codec-device = <&tlv320aic32x4>;
 			status = "okay";
 		};
     };
@@ -72,7 +73,7 @@
             status = "okay";
             cs-gpios = <0>, <0>, <&gpio 17 1>, <&gpio 27 1>;
 
-            tlv320aic32x4@0 {
+            tlv320aic32x4: tlv320aic32x4@0 {
                 #address-cells = <1>;
                 #size-cells = <0>;
                 compatible = "ti,tlv320aic32x4";

@@ -59,8 +59,8 @@ static struct snd_soc_dai_link snd_rpi_udrc_dai[] = {
     .codec_dai_name = "tlv320aic32x4-hifi",
     .platform_name  = "bcm2708-i2s.0",
 //    .codec_name     = "tlv320aic32x4.1-0018",
-    .codec_name     = "spi0.0",
-    .dai_fmt        = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBS_CFS,
+//    .codec_name     = "spi0.0",
+    .dai_fmt        = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBM_CFM,
     .ops            = &snd_rpi_udrc_ops,
     .init           = snd_rpi_udrc_init,
 },
@@ -78,6 +78,7 @@ static int snd_rpi_udrc_probe(struct platform_device *pdev) {
 
     if(pdev->dev.of_node) {
         struct device_node *i2s_node;
+        struct device_node *codec_node;
         struct snd_soc_dai_link *dai = &snd_rpi_udrc_dai[0];
         i2s_node = of_parse_phandle(pdev->dev.of_node, "i2s-controller", 0);
 
@@ -87,6 +88,13 @@ static int snd_rpi_udrc_probe(struct platform_device *pdev) {
             dai->platform_name = NULL;
             dai->platform_of_node = i2s_node;
         }
+        
+        //  XXX change to codec-device
+        codec_node = of_parse_phandle(pdev->dev.of_node, "codec-device", 0);
+        if(codec_node) {
+        	dai->codec_name = NULL;
+        	dai->codec_of_node = codec_node;
+        }        
     }
 
     printk(KERN_ERR "Attempting to register card\n");
