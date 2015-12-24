@@ -49,3 +49,4 @@ obj-$(CONFIG_WILC1000)		+= wilc1000/
 obj-$(CONFIG_MOST)		+= most/
 obj-$(CONFIG_ADF4360)		+= adf4360/
 obj-$(CONFIG_AD9832)		+= ad9832/
+obj-$(CONFIG_CMX991)		+= cmx991/
