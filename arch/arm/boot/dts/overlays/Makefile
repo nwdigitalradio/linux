@@ -62,6 +62,8 @@ dtb-$(RPI_DT_OVERLAYS) += uart1-overlay.dtb
 dtb-$(RPI_DT_OVERLAYS) += vga666-overlay.dtb
 dtb-$(RPI_DT_OVERLAYS) += w1-gpio-overlay.dtb
 dtb-$(RPI_DT_OVERLAYS) += w1-gpio-pullup-overlay.dtb
+dtb-$(RPI_DT_OVERLAYS) += udrc-overlay.dtb
+dtb-$(RPI_DT_OVERLAYS) += udrx-overlay.dtb
 
 targets += dtbs dtbs_install
 targets += $(dtb-y)

@@ -1,0 +1,5 @@
+config AD9832
+	tristate "Driver for Analog Devices AD9832 devices."
+	depends on SPI
+	help
+		

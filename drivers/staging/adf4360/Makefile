@@ -1,0 +1,1 @@
+obj-$(CONFIG_ADF4360)		+= adf4360.o

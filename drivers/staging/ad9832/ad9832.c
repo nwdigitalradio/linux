@@ -15,32 +15,11 @@
 #include <linux/err.h>
 #include <linux/module.h>
 #include <linux/clk.h>
-#include <asm/div64.h>
-
-#include <linux/iio/iio.h>
-#include <linux/iio/sysfs.h>
-#include "dds.h"
+#include <linux/of.h>
 
 #include "ad9832.h"
 
-static unsigned long ad9832_calc_freqreg(unsigned long mclk, unsigned long fout)
-{
-	unsigned long long freqreg = (u64)fout *
-				     (u64)((u64)1L << AD9832_FREQ_BITS);
-	do_div(freqreg, mclk);
-	return freqreg;
-}
-
-static int ad9832_write_frequency(struct ad9832_state *st,
-				  unsigned addr, unsigned long fout)
-{
-	unsigned long regval;
-
-	if (fout > (st->mclk / 2))
-		return -EINVAL;
-
-	regval = ad9832_calc_freqreg(st->mclk, fout);
-
+static int ad9832_write_frequency(struct ad9832_state *st, u32 addr, u32 regval) {
 	st->freq_data[0] = cpu_to_be16((AD9832_CMD_FRE8BITSW << CMD_SHIFT) |
 					(addr << ADD_SHIFT) |
 					((regval >> 24) & 0xFF));
@@ -57,9 +36,36 @@ static int ad9832_write_frequency(struct ad9832_state *st,
 	return spi_sync(st->spi, &st->freq_msg);
 }
 
-static int ad9832_write_phase(struct ad9832_state *st,
-			      unsigned long addr, unsigned long phase)
-{
+static ssize_t ad9832_frequencyword_store(struct device *dev, const char *buf, 
+                                          size_t len, u32 addr) {
+    int ret;
+	u32 regval;
+	struct ad9832_state *st = dev_get_drvdata(dev);
+
+	ret = kstrtou32(buf, 0, &regval);
+	if (ret)
+		return ret;	
+
+	ret = ad9832_write_frequency(st, addr, regval);
+	if(ret)
+		return ret;
+		
+	return len;
+}
+
+#define FREQUENCY_ENTRY(index) 													\
+static ssize_t frequencyword##index##_store(struct device *dev,					\
+                                            struct device_attribute *attr,		\
+                                            const char *buf, size_t len) {		\
+																				\
+	return ad9832_frequencyword_store(dev, buf, len, AD9832_FREQ##index##HM);	\
+}															   					\
+static DEVICE_ATTR_WO(frequencyword##index)
+
+FREQUENCY_ENTRY(0);
+FREQUENCY_ENTRY(1);
+
+static int ad9832_write_phase(struct ad9832_state *st, u32 addr, u16 phase) {
 	if (phase > BIT(AD9832_PHASE_BITS))
 		return -EINVAL;
 
@@ -73,137 +79,166 @@ static int ad9832_write_phase(struct ad9832_state *st,
 	return spi_sync(st->spi, &st->phase_msg);
 }
 
-static ssize_t ad9832_write(struct device *dev, struct device_attribute *attr,
-			    const char *buf, size_t len)
-{
-	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
-	struct ad9832_state *st = iio_priv(indio_dev);
-	struct iio_dev_attr *this_attr = to_iio_dev_attr(attr);
-	int ret;
-	unsigned long val;
+static ssize_t ad9832_phaseword_store(struct device *dev, const char *buf,
+                                      size_t len, u32 addr) {
+    int ret;
+    u16 phase;
+	struct ad9832_state *st = dev_get_drvdata(dev);
 
-	ret = kstrtoul(buf, 10, &val);
+	ret = kstrtou16(buf, 0, &phase);
 	if (ret)
-		goto error_ret;
+		return ret;
 
-	mutex_lock(&indio_dev->mlock);
-	switch ((u32)this_attr->address) {
-	case AD9832_FREQ0HM:
-	case AD9832_FREQ1HM:
-		ret = ad9832_write_frequency(st, this_attr->address, val);
-		break;
-	case AD9832_PHASE0H:
-	case AD9832_PHASE1H:
-	case AD9832_PHASE2H:
-	case AD9832_PHASE3H:
-		ret = ad9832_write_phase(st, this_attr->address, val);
-		break;
-	case AD9832_PINCTRL_EN:
-		if (val)
-			st->ctrl_ss &= ~AD9832_SELSRC;
-		else
-			st->ctrl_ss |= AD9832_SELSRC;
-		st->data = cpu_to_be16((AD9832_CMD_SYNCSELSRC << CMD_SHIFT) |
-					st->ctrl_ss);
-		ret = spi_sync(st->spi, &st->msg);
-		break;
-	case AD9832_FREQ_SYM:
-		if (val == 1) {
-			st->ctrl_fp |= AD9832_FREQ;
-		} else if (val == 0) {
-			st->ctrl_fp &= ~AD9832_FREQ;
-		} else {
-			ret = -EINVAL;
-			break;
-		}
-		st->data = cpu_to_be16((AD9832_CMD_FPSELECT << CMD_SHIFT) |
-					st->ctrl_fp);
-		ret = spi_sync(st->spi, &st->msg);
-		break;
-	case AD9832_PHASE_SYM:
-		if (val > 3) {
-			ret = -EINVAL;
-			break;
-		}
-
-		st->ctrl_fp &= ~AD9832_PHASE(3);
-		st->ctrl_fp |= AD9832_PHASE(val);
-
-		st->data = cpu_to_be16((AD9832_CMD_FPSELECT << CMD_SHIFT) |
-					st->ctrl_fp);
-		ret = spi_sync(st->spi, &st->msg);
-		break;
-	case AD9832_OUTPUT_EN:
-		if (val)
-			st->ctrl_src &= ~(AD9832_RESET | AD9832_SLEEP |
-					AD9832_CLR);
-		else
-			st->ctrl_src |= AD9832_RESET;
-
-		st->data = cpu_to_be16((AD9832_CMD_SLEEPRESCLR << CMD_SHIFT) |
-					st->ctrl_src);
-		ret = spi_sync(st->spi, &st->msg);
-		break;
-	default:
-		ret = -ENODEV;
-	}
-	mutex_unlock(&indio_dev->mlock);
-
-error_ret:
-	return ret ? ret : len;
+	ret = ad9832_write_phase(st, addr, phase);
+	if(ret)
+		return ret;
+		
+	return len;              
 }
 
-/**
- * see dds.h for further information
- */
+#define PHASE_ENTRY(index)  															\
+static ssize_t phaseword##index##_store(struct device *dev,								\
+                                        struct device_attribute *attr, const char *buf,	\
+			    		                size_t len) {									\
+	return ad9832_phaseword_store(dev, buf, len, AD9832_PHASE##index##H);				\
+}																						\
+static DEVICE_ATTR_WO(phaseword##index)
 
-static IIO_DEV_ATTR_FREQ(0, 0, S_IWUSR, NULL, ad9832_write, AD9832_FREQ0HM);
-static IIO_DEV_ATTR_FREQ(0, 1, S_IWUSR, NULL, ad9832_write, AD9832_FREQ1HM);
-static IIO_DEV_ATTR_FREQSYMBOL(0, S_IWUSR, NULL, ad9832_write, AD9832_FREQ_SYM);
-static IIO_CONST_ATTR_FREQ_SCALE(0, "1"); /* 1Hz */
+PHASE_ENTRY(0);
+PHASE_ENTRY(1);
+PHASE_ENTRY(2);
+PHASE_ENTRY(3);
 
-static IIO_DEV_ATTR_PHASE(0, 0, S_IWUSR, NULL, ad9832_write, AD9832_PHASE0H);
-static IIO_DEV_ATTR_PHASE(0, 1, S_IWUSR, NULL, ad9832_write, AD9832_PHASE1H);
-static IIO_DEV_ATTR_PHASE(0, 2, S_IWUSR, NULL, ad9832_write, AD9832_PHASE2H);
-static IIO_DEV_ATTR_PHASE(0, 3, S_IWUSR, NULL, ad9832_write, AD9832_PHASE3H);
-static IIO_DEV_ATTR_PHASESYMBOL(0, S_IWUSR, NULL,
-				ad9832_write, AD9832_PHASE_SYM);
-static IIO_CONST_ATTR_PHASE_SCALE(0, "0.0015339808"); /* 2PI/2^12 rad*/
+static ssize_t out_enable_store(struct device *dev, struct device_attribute *attr,
+                                const char *buf, size_t len) {
+	int ret;
+	u8 enable;
+	struct ad9832_state *st = dev_get_drvdata(dev);
+	
+	ret = kstrtou8(buf, 0, &enable);
+	if(ret)
+		return ret;
+		
+	if (enable)
+		st->ctrl_src &= ~(AD9832_RESET | AD9832_SLEEP |
+                          AD9832_CLR);
+	else
+		st->ctrl_src |= AD9832_RESET;
 
-static IIO_DEV_ATTR_PINCONTROL_EN(0, S_IWUSR, NULL,
-				ad9832_write, AD9832_PINCTRL_EN);
-static IIO_DEV_ATTR_OUT_ENABLE(0, S_IWUSR, NULL,
-				ad9832_write, AD9832_OUTPUT_EN);
+	st->data = cpu_to_be16((AD9832_CMD_SLEEPRESCLR << CMD_SHIFT) |
+					       st->ctrl_src);
+	ret = spi_sync(st->spi, &st->msg);
+	if(ret)
+		return ret;
 
-static struct attribute *ad9832_attributes[] = {
-	&iio_dev_attr_out_altvoltage0_frequency0.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_frequency1.dev_attr.attr,
-	&iio_const_attr_out_altvoltage0_frequency_scale.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_phase0.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_phase1.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_phase2.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_phase3.dev_attr.attr,
-	&iio_const_attr_out_altvoltage0_phase_scale.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_pincontrol_en.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_frequencysymbol.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_phasesymbol.dev_attr.attr,
-	&iio_dev_attr_out_altvoltage0_out_enable.dev_attr.attr,
-	NULL,
+	return len;
+}
+static DEVICE_ATTR_WO(out_enable);
+
+static ssize_t frequency_select_store(struct device *dev, struct device_attribute *attr,
+                                      const char *buf, size_t len) {
+    int ret;
+    u8 select;
+    struct ad9832_state *st = dev_get_drvdata(dev);
+    
+    ret = kstrtou8(buf, 0, &select);
+    if(ret)
+    	return ret;
+    
+	if (select == 1) {
+		st->ctrl_fp |= AD9832_FREQ;
+	} else if (select == 0) {
+		st->ctrl_fp &= ~AD9832_FREQ;
+	} else {
+		return -EINVAL;
+	}
+	st->data = cpu_to_be16((AD9832_CMD_FPSELECT << CMD_SHIFT) |
+					       st->ctrl_fp);
+	ret = spi_sync(st->spi, &st->msg);
+	if(ret)
+		return ret;
+	
+	return len;
+}
+DEVICE_ATTR_WO(frequency_select);
+
+static ssize_t phase_select_store(struct device *dev, struct device_attribute *attr,
+                                  const char *buf, size_t len) {
+	int ret;
+	u8 select;
+	struct ad9832_state *st = dev_get_drvdata(dev);
+	
+	ret = kstrtou8(buf, 0, &select);
+	if(ret)
+		return ret;
+	
+	if (select > 3)
+		return -EINVAL;
+
+	st->ctrl_fp &= ~AD9832_PHASE(3);
+	st->ctrl_fp |= AD9832_PHASE(select);
+
+	st->data = cpu_to_be16((AD9832_CMD_FPSELECT << CMD_SHIFT) |
+					st->ctrl_fp);
+	ret = spi_sync(st->spi, &st->msg);
+	if(ret)
+		return ret;
+		
+	return len;
+}
+DEVICE_ATTR_WO(phase_select);
+
+static ssize_t select_source_store(struct device *dev, struct device_attribute *attr,
+                                   const char *buf, size_t len) {
+	int ret;
+	u8 select;
+	struct ad9832_state *st = dev_get_drvdata(dev);
+	
+	ret = kstrtou8(buf, 0, &select);
+	if(ret)
+		return ret;
+		
+	if (select)
+		st->ctrl_ss &= ~AD9832_SELSRC;
+	else
+		st->ctrl_ss |= AD9832_SELSRC;
+	st->data = cpu_to_be16((AD9832_CMD_SYNCSELSRC << CMD_SHIFT) |
+					        st->ctrl_ss);
+	ret = spi_sync(st->spi, &st->msg);
+	if(ret)
+		return ret;
+		
+	return len;
+}
+DEVICE_ATTR_WO(select_source);
+
+static struct attribute *control_attrs[] = {
+	&dev_attr_frequencyword0.attr,
+	&dev_attr_frequencyword1.attr,
+ 	&dev_attr_phaseword0.attr,
+	&dev_attr_phaseword1.attr,
+	&dev_attr_phaseword2.attr,
+	&dev_attr_phaseword3.attr,
+	&dev_attr_out_enable.attr,
+	&dev_attr_select_source.attr,
+	&dev_attr_frequency_select.attr,
+	&dev_attr_phase_select.attr,
+	NULL
 };
 
-static const struct attribute_group ad9832_attribute_group = {
-	.attrs = ad9832_attributes,
+static struct attribute_group control_group = {
+	.name = "control",
+	.attrs = control_attrs,
 };
 
-static const struct iio_info ad9832_info = {
-	.attrs = &ad9832_attribute_group,
-	.driver_module = THIS_MODULE,
+static const struct attribute_group *device_groups[] = {
+	&control_group,
+	NULL
 };
 
 static int ad9832_probe(struct spi_device *spi)
 {
 	struct ad9832_platform_data *pdata = spi->dev.platform_data;
-	struct iio_dev *indio_dev;
 	struct ad9832_state *st;
 	struct regulator *reg;
 	struct device_node *np = spi->dev.of_node;
@@ -240,22 +275,18 @@ static int ad9832_probe(struct spi_device *spi)
 			return ret;
 	}
 	
-	indio_dev = devm_iio_device_alloc(&spi->dev, sizeof(*st));
-	if (!indio_dev) {
-		ret = -ENOMEM;
-		goto error_disable_reg;
-	}
-	
-	spi_set_drvdata(spi, indio_dev);
-	st = iio_priv(indio_dev);
+	if(sysfs_create_groups(&spi->dev.kobj, device_groups))
+		dev_err(&spi->dev, "Couldn't register device attribute groups");
+				
+	st = devm_kzalloc(&spi->dev, sizeof(*st), GFP_KERNEL);
+	if (!st)
+		return -ENOMEM;
+		
+	spi_set_drvdata(spi, st);
+
 	st->mclk = mclk;
 	st->reg = reg;
 	st->spi = spi;
-
-	indio_dev->dev.parent = &spi->dev;
-	indio_dev->name = spi_get_device_id(spi)->name;
-	indio_dev->info = &ad9832_info;
-	indio_dev->modes = INDIO_DIRECT_MODE;
 
 	/* Setup default messages */
 
@@ -326,10 +357,6 @@ static int ad9832_probe(struct spi_device *spi)
 	if (ret)
 		goto error_disable_reg;
 
-	ret = iio_device_register(indio_dev);
-	if (ret)
-		goto error_disable_reg;
-
 	return 0;
 
 error_disable_reg:
@@ -341,10 +368,8 @@ error_disable_reg:
 
 static int ad9832_remove(struct spi_device *spi)
 {
-	struct iio_dev *indio_dev = spi_get_drvdata(spi);
-	struct ad9832_state *st = iio_priv(indio_dev);
+	struct ad9832_state *st = spi_get_drvdata(spi);
 
-	iio_device_unregister(indio_dev);
 	if (!IS_ERR(st->reg))
 		regulator_disable(st->reg);
 
@@ -369,6 +394,7 @@ static struct spi_driver ad9832_driver = {
 	.driver = {
 		.name	= "ad9832",
 		.owner	= THIS_MODULE,
+		.of_match_table = ad9832_of_id,
 	},
 	.probe		= ad9832_probe,
 	.remove		= ad9832_remove,
@@ -376,6 +402,6 @@ static struct spi_driver ad9832_driver = {
 };
 module_spi_driver(ad9832_driver);
 
-MODULE_AUTHOR("Michael Hennerich <hennerich@blackfin.uclinux.org>");
+MODULE_AUTHOR("Jeremy McDermond <nh6z@nh6z.net>");
 MODULE_DESCRIPTION("Analog Devices AD9832/AD9835 DDS");
 MODULE_LICENSE("GPL v2");

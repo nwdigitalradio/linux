@@ -31,6 +31,7 @@
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
 #include <linux/i2c.h>
+#include <linux/spi/spi.h>
 #include <linux/cdev.h>
 #include <linux/slab.h>
 #include <linux/clk.h>
@@ -287,15 +288,6 @@ static const struct regmap_range_cfg aic32x4_regmap_pages[] = {
 	},
 };
 
-static const struct regmap_config aic32x4_regmap = {
-	.reg_bits = 8,
-	.val_bits = 8,
-
-	.max_register = AIC32X4_RMICPGAVOL,
-	.ranges = aic32x4_regmap_pages,
-	.num_ranges = ARRAY_SIZE(aic32x4_regmap_pages),
-};
-
 static inline int aic32x4_get_divs(int mclk, int rate)
 {
 	int i;
@@ -306,7 +298,7 @@ static inline int aic32x4_get_divs(int mclk, int rate)
 			return i;
 		}
 	}
-	printk(KERN_ERR "aic32x4: master clock and sample rate is not supported\n");
+	printk(KERN_ERR "aic32x4: master clock %d and sample rate %d is not supported\n", mclk, rate);
 	return -EINVAL;
 }
 
@@ -315,6 +307,8 @@ static int aic32x4_set_dai_sysclk(struct snd_soc_dai *codec_dai,
 {
 	struct snd_soc_codec *codec = codec_dai->codec;
 	struct aic32x4_priv *aic32x4 = snd_soc_codec_get_drvdata(codec);
+
+	printk(KERN_ERR "In aic32x4_set_dai_sysclk\n");
 
 	switch (freq) {
 	case AIC32X4_FREQ_12000000:
@@ -333,6 +327,8 @@ static int aic32x4_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 	u8 iface_reg_1;
 	u8 iface_reg_2;
 	u8 iface_reg_3;
+
+	printk(KERN_ERR "In aic32x4_set_dai_fmt\n");
 
 	iface_reg_1 = snd_soc_read(codec, AIC32X4_IFACE1);
 	iface_reg_1 = iface_reg_1 & ~(3 << 6 | 3 << 2);
@@ -392,6 +388,8 @@ static int aic32x4_hw_params(struct snd_pcm_substream *substream,
 	struct aic32x4_priv *aic32x4 = snd_soc_codec_get_drvdata(codec);
 	u8 data;
 	int i;
+
+	printk(KERN_ERR "In aic32x4_hw_params\n");
 
 	i = aic32x4_get_divs(aic32x4->sysclk, params_rate(params));
 	if (i < 0) {
@@ -484,6 +482,8 @@ static int aic32x4_mute(struct snd_soc_dai *dai, int mute)
 	struct snd_soc_codec *codec = dai->codec;
 	u8 dac_reg;
 
+	printk(KERN_ERR "In aic32x4_mute\n");
+
 	dac_reg = snd_soc_read(codec, AIC32X4_DACMUTE) & ~AIC32X4_MUTEON;
 	if (mute)
 		snd_soc_write(codec, AIC32X4_DACMUTE, dac_reg | AIC32X4_MUTEON);
@@ -498,8 +498,11 @@ static int aic32x4_set_bias_level(struct snd_soc_codec *codec,
 	struct aic32x4_priv *aic32x4 = snd_soc_codec_get_drvdata(codec);
 	int ret;
 
+	printk(KERN_ERR "In aic32x4_set_bias_level\n");
+
 	switch (level) {
 	case SND_SOC_BIAS_ON:
+		printk(KERN_ERR "Setting bias on");
 		/* Switch on master clock */
 		ret = clk_prepare_enable(aic32x4->mclk);
 		if (ret) {
@@ -534,6 +537,7 @@ static int aic32x4_set_bias_level(struct snd_soc_codec *codec,
 	case SND_SOC_BIAS_PREPARE:
 		break;
 	case SND_SOC_BIAS_STANDBY:
+		printk(KERN_ERR "Setting bias to standby");
 		/* Switch off BCLK_N Divider */
 		snd_soc_update_bits(codec, AIC32X4_BCLKN,
 				    AIC32X4_BCLKEN, 0);
@@ -559,7 +563,8 @@ static int aic32x4_set_bias_level(struct snd_soc_codec *codec,
 				    AIC32X4_PLLEN, 0);
 
 		/* Switch off master clock */
-		clk_disable_unprepare(aic32x4->mclk);
+		if(codec->dapm.bias_level == SND_SOC_BIAS_ON)
+			clk_disable_unprepare(aic32x4->mclk);
 		break;
 	case SND_SOC_BIAS_OFF:
 		break;
@@ -609,6 +614,9 @@ static int aic32x4_probe(struct snd_soc_codec *codec)
 
 	snd_soc_write(codec, AIC32X4_RESET, 0x01);
 
+	//  Need to wait 1ms after reset per the datasheet
+	msleep(1);
+
 	/* Power platform configuration */
 	if (aic32x4->power_cfg & AIC32X4_PWR_MICBIAS_2075_LDOIN) {
 		snd_soc_write(codec, AIC32X4_MICBIAS, AIC32X4_MICBIAS_LDOIN |
@@ -626,6 +634,15 @@ static int aic32x4_probe(struct snd_soc_codec *codec)
 		tmp_reg |= AIC32X4_LDOIN_18_36;
 	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED)
 		tmp_reg |= AIC32X4_LDOIN2HP;
+	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_125V)
+		tmp_reg |= AIC32X4_LDOIN_HP_125V;
+	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_15V)
+		tmp_reg |= AIC32X4_LDOIN_HP_15V;
+	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_165V)
+		tmp_reg |= AIC32X4_LDOIN_HP_165V;
+	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_LO_LDOIN_POWERED)
+		tmp_reg |= AIC32X4_LDOIN2LO;
+
 	snd_soc_write(codec, AIC32X4_CMMODE, tmp_reg);
 
 	/* Mic PGA routing */
@@ -669,17 +686,68 @@ static struct snd_soc_codec_driver soc_codec_dev_aic32x4 = {
 };
 
 static int aic32x4_parse_dt(struct aic32x4_priv *aic32x4,
-		struct device_node *np)
+		struct device_node *np, struct device *dev)
 {
+	int ldo_voltage = regulator_get_voltage(aic32x4->supply_ldo);
+	int common_mode_voltage = 0;
+
 	aic32x4->swapdacs = false;
 	aic32x4->micpga_routing = 0;
 	aic32x4->rstn_gpio = of_get_named_gpio(np, "reset-gpios", 0);
+
+	//  XXX This should be through the device tree, maybe the pin interface
+	/* aic32x4->micpga_routing = AIC32X4_MICPGA_ROUTE_LMIC_IN2R_10K |
+	                          AIC32X4_MICPGA_ROUTE_RMIC_IN1L_10K; */
+	                          
+	if(!of_property_read_u32_index(np, "ti,common-mode-microvolt", 0, &common_mode_voltage)) {
+		switch(common_mode_voltage) {
+			case 1250000:
+				aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_125V;
+				break;
+			case 1500000:
+				aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_15V;
+				break;
+			case 1650000:
+				aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_165V;
+				break;
+			default:
+				dev_err(dev, "Invalid common mode voltage\n");
+				break;
+		}
+	}
+	
+	if(of_get_property(np, "ti,avdd-weak-disable", NULL))
+		aic32x4->power_cfg |= AIC32X4_PWR_AVDD_DVDD_WEAK_DISABLE;
+	else
+		aic32x4->power_cfg &= ~(AIC32X4_PWR_AVDD_DVDD_WEAK_DISABLE);
+		
+	if(!IS_ERR(aic32x4->supply_ldo)) {
+		if(ldo_voltage >= 1800000 && ldo_voltage <= 3600000) {
+			aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_LDOIN_RANGE_18_36;
+		} else if(ldo_voltage >= 1500000 && ldo_voltage < 1800000) {
+			aic32x4->power_cfg &= ~(AIC32X4_PWR_CMMODE_LDOIN_RANGE_18_36);
+		} else {
+			dev_err(dev, "LDO Voltage is out of range\n");
+			return -EPROBE_DEFER;
+		}
+		
+		if(of_get_property(np, "ti,hp-ldoin-powered", NULL))
+			aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED;
+		else
+			aic32x4->power_cfg &= ~(AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED);
+			
+		if(of_get_property(np, "ti,lo-ldoin-powered", NULL))
+			aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_LO_LDOIN_POWERED;
+		else
+			aic32x4->power_cfg &= ~(AIC32X4_PWR_CMMODE_LO_LDOIN_POWERED);
+	}
 
 	return 0;
 }
 
 static void aic32x4_disable_regulators(struct aic32x4_priv *aic32x4)
 {
+
 	regulator_disable(aic32x4->supply_iov);
 
 	if (!IS_ERR(aic32x4->supply_ldo))
@@ -692,11 +760,9 @@ static void aic32x4_disable_regulators(struct aic32x4_priv *aic32x4)
 		regulator_disable(aic32x4->supply_av);
 }
 
-static int aic32x4_setup_regulators(struct device *dev,
+static int aic32x4_configure_regulators(struct device *dev,
 		struct aic32x4_priv *aic32x4)
 {
-	int ret = 0;
-
 	aic32x4->supply_ldo = devm_regulator_get_optional(dev, "ldoin");
 	aic32x4->supply_iov = devm_regulator_get(dev, "iov");
 	aic32x4->supply_dv = devm_regulator_get_optional(dev, "dv");
@@ -729,6 +795,14 @@ static int aic32x4_setup_regulators(struct device *dev,
 				PTR_ERR(aic32x4->supply_av) == -EPROBE_DEFER)
 			return -EPROBE_DEFER;
 	}
+
+	return 0;
+}
+
+static int aic32x4_setup_regulators(struct device *dev,
+		struct aic32x4_priv *aic32x4)
+{
+	int ret = 0;
 
 	ret = regulator_enable(aic32x4->supply_iov);
 	if (ret) {
@@ -778,6 +852,23 @@ error_ldo:
 	return ret;
 }
 
+static const struct of_device_id aic32x4_of_id[] = {
+	{ .compatible = "ti,tlv320aic32x4", },
+	{ /* senitel */ }
+};
+MODULE_DEVICE_TABLE(of, aic32x4_of_id);
+
+#if defined(CONFIG_I2C) || defined(CONFIG_I2C_MODULE)
+
+static const struct regmap_config aic32x4_i2c_regmap = {
+	.reg_bits = 8,
+	.val_bits = 8,
+
+	.max_register = AIC32X4_RMICPGAVOL,
+	.ranges = aic32x4_regmap_pages,
+	.num_ranges = ARRAY_SIZE(aic32x4_regmap_pages),
+};
+
 static int aic32x4_i2c_probe(struct i2c_client *i2c,
 			     const struct i2c_device_id *id)
 {
@@ -791,24 +882,33 @@ static int aic32x4_i2c_probe(struct i2c_client *i2c,
 	if (aic32x4 == NULL)
 		return -ENOMEM;
 
-	aic32x4->regmap = devm_regmap_init_i2c(i2c, &aic32x4_regmap);
+	aic32x4->regmap = devm_regmap_init_i2c(i2c, &aic32x4_i2c_regmap);
 	if (IS_ERR(aic32x4->regmap))
 		return PTR_ERR(aic32x4->regmap);
 
 	i2c_set_clientdata(i2c, aic32x4);
 
+	ret = aic32x4_configure_regulators(&i2c->dev, aic32x4);
+	if (ret) {
+		dev_err(&i2c->dev, "Failed to configure regulators\n");
+		return ret;
+	}
+
 	if (pdata) {
+		printk(KERN_ERR "Have pdata");
 		aic32x4->power_cfg = pdata->power_cfg;
 		aic32x4->swapdacs = pdata->swapdacs;
 		aic32x4->micpga_routing = pdata->micpga_routing;
 		aic32x4->rstn_gpio = pdata->rstn_gpio;
 	} else if (np) {
-		ret = aic32x4_parse_dt(aic32x4, np);
+		printk(KERN_ERR "Have DT");
+		ret = aic32x4_parse_dt(aic32x4, np, &i2c->dev);
 		if (ret) {
 			dev_err(&i2c->dev, "Failed to parse DT node\n");
 			return ret;
 		}
 	} else {
+		printk(KERN_ERR "Have None");
 		aic32x4->power_cfg = 0;
 		aic32x4->swapdacs = false;
 		aic32x4->micpga_routing = 0;
@@ -863,12 +963,6 @@ static const struct i2c_device_id aic32x4_i2c_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, aic32x4_i2c_id);
 
-static const struct of_device_id aic32x4_of_id[] = {
-	{ .compatible = "ti,tlv320aic32x4", },
-	{ /* senitel */ }
-};
-MODULE_DEVICE_TABLE(of, aic32x4_of_id);
-
 static struct i2c_driver aic32x4_i2c_driver = {
 	.driver = {
 		.name = "tlv320aic32x4",
@@ -879,8 +973,157 @@ static struct i2c_driver aic32x4_i2c_driver = {
 	.remove =   aic32x4_i2c_remove,
 	.id_table = aic32x4_i2c_id,
 };
+#endif
 
-module_i2c_driver(aic32x4_i2c_driver);
+#if defined(CONFIG_SPI_MASTER)
+
+static const struct regmap_config aic32x4_spi_regmap = {
+	.reg_bits = 7,
+	.pad_bits = 1,
+	.val_bits = 8,
+	.read_flag_mask = 0x01,
+
+	.max_register = AIC32X4_RMICPGAVOL,
+	.ranges = aic32x4_regmap_pages,
+	.num_ranges = ARRAY_SIZE(aic32x4_regmap_pages),
+};
+
+static int aic32x4_spi_probe(struct spi_device *spi)
+{
+	struct aic32x4_pdata *pdata = spi->dev.platform_data;
+	struct aic32x4_priv *aic32x4;
+	struct device_node *np = spi->dev.of_node;
+	int ret;
+
+	aic32x4 = devm_kzalloc(&spi->dev, sizeof(struct aic32x4_priv),
+			       GFP_KERNEL);
+	if (aic32x4 == NULL)
+		return -ENOMEM;
+
+	aic32x4->regmap = devm_regmap_init_spi(spi, &aic32x4_spi_regmap);
+	if (IS_ERR(aic32x4->regmap))
+		return PTR_ERR(aic32x4->regmap);
+
+	spi_set_drvdata(spi, aic32x4);
+
+	ret = aic32x4_configure_regulators(&spi->dev, aic32x4);
+	if (ret) {
+		dev_err(&spi->dev, "Failed to configure regulators\n");
+		return ret;
+	}
+
+	if (pdata) {
+		printk(KERN_ERR "Have pdata");
+		aic32x4->power_cfg = pdata->power_cfg;
+		aic32x4->swapdacs = pdata->swapdacs;
+		aic32x4->micpga_routing = pdata->micpga_routing;
+		aic32x4->rstn_gpio = pdata->rstn_gpio;
+	} else if (np) {
+		printk(KERN_ERR "Have DT");
+		ret = aic32x4_parse_dt(aic32x4, np, &spi->dev);
+		if (ret) {
+			dev_err(&spi->dev, "Failed to parse DT node\n");
+			return ret;
+		}
+	} else {
+		printk(KERN_ERR "Have None");
+		aic32x4->power_cfg = 0;
+		aic32x4->swapdacs = false;
+		aic32x4->micpga_routing = 0;
+		aic32x4->rstn_gpio = -1;
+	}
+	
+	spi->mode |= SPI_CPHA;
+
+	aic32x4->mclk = devm_clk_get(&spi->dev, "mclk");
+	if (IS_ERR(aic32x4->mclk)) {
+		dev_err(&spi->dev, "Failed getting the mclk. The current implementation does not support the usage of this codec without mclk\n");
+		return PTR_ERR(aic32x4->mclk);
+	}
+
+	if (gpio_is_valid(aic32x4->rstn_gpio)) {
+		ret = devm_gpio_request_one(&spi->dev, aic32x4->rstn_gpio,
+				GPIOF_OUT_INIT_LOW, "tlv320aic32x4 rstn");
+		if (ret != 0)
+			return ret;
+	}
+
+	ret = aic32x4_setup_regulators(&spi->dev, aic32x4);
+	if (ret) {
+		dev_err(&spi->dev, "Failed to setup regulators\n");
+		return ret;
+	}
+
+	ret = snd_soc_register_codec(&spi->dev,
+			&soc_codec_dev_aic32x4, &aic32x4_dai, 1);
+	if (ret) {
+		dev_err(&spi->dev, "Failed to register codec\n");
+		aic32x4_disable_regulators(aic32x4);
+		return ret;
+	}
+
+	spi_set_drvdata(spi, aic32x4);
+
+	return 0;
+}
+
+static int aic32x4_spi_remove(struct spi_device *dev)
+{
+	struct aic32x4_priv *aic32x4 = spi_get_drvdata(dev);
+
+	aic32x4_disable_regulators(aic32x4);
+
+	snd_soc_unregister_codec(&dev->dev);
+	return 0;
+}
+
+static const struct spi_device_id aic32x4_spi_id[] = {
+	{ "tlv320aic32x4", 0 },
+	{ }
+};
+MODULE_DEVICE_TABLE(spi, aic32x4_spi_id);
+
+static struct spi_driver aic32x4_spi_driver = {
+	.driver = {
+		.name = "tlv320aic32x4",
+		.owner = THIS_MODULE,
+		.of_match_table = aic32x4_of_id,
+	},
+	.probe =    aic32x4_spi_probe,
+	.remove =   aic32x4_spi_remove,
+	.id_table = aic32x4_spi_id,
+};
+#endif
+
+static int __init aic32x4_modinit(void) {
+	int ret = 0;
+	
+#if defined(CONFIG_I2C) || defined(CONFIG_I2C_MODULE)
+	ret = i2c_add_driver(&aic32x4_i2c_driver);
+	if(ret) {
+		printk(KERN_ERR "Failed to register tlv320aic32x4 I2C driver: %d\n", ret);
+	}
+#endif
+#if defined(CONFIG_SPI_MASTER)
+	ret = spi_register_driver(&aic32x4_spi_driver);
+	if(ret) {
+		printk(KERN_ERR "Failed to register tlv320aic32x4 SPI driver: %d\n", ret);
+	}
+#endif
+
+	return ret;
+}
+module_init(aic32x4_modinit);	
+
+static void __exit aic32x4_exit(void) {
+#if defined(CONFIG_I2C) || defined(CONFIG_I2C_MODULE)
+	i2c_del_driver(&aic32x4_i2c_driver);
+#endif
+#if defined(CONFIG_SPI_MASTER)
+	spi_unregister_driver(&aic32x4_spi_driver);
+#endif
+}
+module_exit(aic32x4_exit);
 
 MODULE_DESCRIPTION("ASoC tlv320aic32x4 codec driver");
 MODULE_AUTHOR("Javier Martin <javier.martin@vista-silicon.com>");

@@ -1,0 +1,6 @@
+config ADF4360
+	tristate "Driver for Analog Devices AD4360 devices."
+	depends on SPI
+	depends on OF
+	help
+		
