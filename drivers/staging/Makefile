@@ -50,3 +50,4 @@ obj-$(CONFIG_I2O)		+= i2o/
 obj-$(CONFIG_FSL_MC_BUS)	+= fsl-mc/
 obj-$(CONFIG_ADF4360)		+= adf4360/
 obj-$(CONFIG_AD9832)		+= ad9832/
+obj-$(CONFIG_CMX991)		+= cmx991/

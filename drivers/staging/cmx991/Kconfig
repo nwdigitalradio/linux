@@ -1,0 +1,4 @@
+config CMX991
+	tristate "Driver for CML Microcircuits CMX 991 RF Quadrature Transceiver"
+	depends on SPI
+	help

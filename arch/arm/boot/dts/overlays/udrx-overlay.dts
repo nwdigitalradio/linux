@@ -100,6 +100,20 @@
                 status = "disabled";
             };
             
+            cmx991@1 {
+            	#address-cells = <1>;
+            	#size-cells = <0>;
+            	compatible = "cml,cmx991";
+            	reg = <1>;
+            	status = "okay";
+            	
+            	spi-max-frequency = <500000>;
+            };
+            
+            spidev@1 {
+            	status = "disabled";
+            };
+            
             ad9832@2 {
                 #address-cells = <1>;
                 #size-cells = <0>;

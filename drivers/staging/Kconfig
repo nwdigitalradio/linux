@@ -116,4 +116,6 @@ source "drivers/staging/adf4360/Kconfig"
 
 source "drivers/staging/ad9832/Kconfig"
 
+source "drivers/staging/cmx991/Kconfig"
+
 endif # STAGING
