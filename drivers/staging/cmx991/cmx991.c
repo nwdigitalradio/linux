@@ -199,6 +199,8 @@ static void cmx991_set_power(struct cmx991_state *st, bool power)
 		
 	regmap_update_bits(st->general_regmap, CMX991_GENERAL_CONTROL, 0x83,
 	                   st->power ? 0x83 : 0x00);
+	regmap_update_bits(st->general_regmap, CMX991_RX_CONTROL, 0x01,
+	                   st->power ? 0x01 : 0x00);
 }
 
 static void cmx991_enable_rx(struct cmx991_state *st, bool power)
@@ -208,8 +210,8 @@ static void cmx991_enable_rx(struct cmx991_state *st, bool power)
 	if(!st->pll_enable && st->rx_power)
 		cmx991_enable_pll(st, true);
 	
-	regmap_update_bits(st->general_regmap, CMX991_RX_CONTROL, 0xF9, 
-	                   st->rx_power ? 0xF9 : 0x00);	
+	regmap_update_bits(st->general_regmap, CMX991_RX_CONTROL, 0xF8, 
+	                   st->rx_power ? 0xF8 : 0x00);	
 }
 
 static void cmx991_enable_tx(struct cmx991_state *st, bool power)
@@ -228,7 +230,8 @@ static inline int cmx991_reset(struct cmx991_state *st)
 	return spi_write(st->spi, reset_buf, 1);
 }
 
-static ssize_t power_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+static ssize_t power_store(struct device *dev, struct device_attribute *attr,
+                           const char *buf, size_t count)
 {
 	struct cmx991_state *st = dev_get_drvdata(dev);
 	u8 enable;
@@ -262,7 +265,8 @@ static ssize_t power_show(struct device *dev, struct device_attribute *attr, cha
 }
 static DEVICE_ATTR_RWGRP(power);
 
-static ssize_t rx_power_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+static ssize_t rx_power_store(struct device *dev, struct device_attribute *attr,
+                              const char *buf, size_t count)
 {
 	struct cmx991_state *st = dev_get_drvdata(dev);
 	u8 enable;
@@ -283,7 +287,8 @@ static ssize_t rx_power_store(struct device *dev, struct device_attribute *attr,
 	                             	
 	return count;
 }
-static ssize_t rx_power_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t rx_power_show(struct device *dev, struct device_attribute *attr,
+                             char *buf)
 {
 	struct cmx991_state *st = dev_get_drvdata(dev);
 
@@ -296,7 +301,8 @@ static ssize_t rx_power_show(struct device *dev, struct device_attribute *attr, 
 }
 static DEVICE_ATTR_RWGRP(rx_power);
 
-static ssize_t tx_power_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+static ssize_t tx_power_store(struct device *dev, struct device_attribute *attr,
+                              const char *buf, size_t count)
 {
 	struct cmx991_state *st = dev_get_drvdata(dev);
 	u8 enable;
@@ -317,7 +323,8 @@ static ssize_t tx_power_store(struct device *dev, struct device_attribute *attr,
 	                             	
 	return count;
 }
-static ssize_t tx_power_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t tx_power_show(struct device *dev, struct device_attribute *attr,
+                             char *buf)
 {
 	struct cmx991_state *st = dev_get_drvdata(dev);
 
@@ -331,7 +338,8 @@ static ssize_t tx_power_show(struct device *dev, struct device_attribute *attr, 
 static DEVICE_ATTR_RWGRP(tx_power);
 
 
-static ssize_t pll_m_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) {
+static ssize_t pll_m_store(struct device *dev, struct device_attribute *attr,
+                           const char *buf, size_t count) {
 	struct cmx991_state *st = dev_get_drvdata(dev);
 	u16 m;
 	
@@ -360,7 +368,8 @@ static ssize_t pll_m_show(struct device *dev, struct device_attribute *attr, cha
 }
 static DEVICE_ATTR_RWGRP(pll_m);
 
-static ssize_t pll_n_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count) {
+static ssize_t pll_n_store(struct device *dev, struct device_attribute *attr,
+                           const char *buf, size_t count) {
 	struct cmx991_state *st = dev_get_drvdata(dev);
 	u16 n;
 	
