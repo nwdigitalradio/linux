@@ -193,27 +193,6 @@ static void cmx991_enable_pll(struct cmx991_state *st, bool enable)
 
 }
 
-static void cmx991_set_power(struct cmx991_state *st, bool power)
-{
-	st->power = power;
-		
-	regmap_update_bits(st->general_regmap, CMX991_GENERAL_CONTROL, 0x83,
-	                   st->power ? 0x83 : 0x00);
-	regmap_update_bits(st->general_regmap, CMX991_RX_CONTROL, 0x01,
-	                   st->power ? 0x01 : 0x00);
-}
-
-static void cmx991_enable_rx(struct cmx991_state *st, bool power)
-{
-	st->rx_power = power;
-	
-	if(!st->pll_enable && st->rx_power)
-		cmx991_enable_pll(st, true);
-	
-	regmap_update_bits(st->general_regmap, CMX991_RX_CONTROL, 0xF8, 
-	                   st->rx_power ? 0xF8 : 0x00);	
-}
-
 static void cmx991_enable_tx(struct cmx991_state *st, bool power)
 {
 	st->tx_power = power;
@@ -223,7 +202,32 @@ static void cmx991_enable_tx(struct cmx991_state *st, bool power)
 		
 	regmap_update_bits(st->general_regmap, CMX991_TX_CONTROL, 0x50,
 	                   st->tx_power ? 0x50 : 0x00);
+	                   
+	//  Turn off the LNA bit when we're transmitting
+	regmap_update_bits(st->general_regmap, CMX991_RX_CONTROL, 0x08,
+	                   st->tx_power ? 0x00 : 0x08);
 }
+
+static void cmx991_set_power(struct cmx991_state *st, bool power)
+{
+	st->power = power;
+		
+	//  Power up the chip
+	regmap_update_bits(st->general_regmap, CMX991_GENERAL_CONTROL, 0x83,
+	                   st->power ? 0x83 : 0x00);
+	
+	//  Power up and enable the PLL                   
+	regmap_update_bits(st->pll_regmap, CMX991_PLL_M_MSB, 0xE0, 
+	                   st->power ? 0xA0 : 0x00);
+
+	//  Turn on the receiver
+	regmap_update_bits(st->general_regmap, CMX991_RX_CONTROL, 0xF9,
+	                   st->power ? 0xF9 : 0x00);
+	                   
+	//  Make sure the transmitter is off
+	cmx991_enable_tx(st, false);
+}
+
 
 static inline int cmx991_reset(struct cmx991_state *st)
 {
@@ -264,42 +268,6 @@ static ssize_t power_show(struct device *dev, struct device_attribute *attr, cha
 	return 1;
 }
 static DEVICE_ATTR_RWGRP(power);
-
-static ssize_t rx_power_store(struct device *dev, struct device_attribute *attr,
-                              const char *buf, size_t count)
-{
-	struct cmx991_state *st = dev_get_drvdata(dev);
-	u8 enable;
-	
-	if(kstrtou8(buf, 0, &enable)) {
-		dev_err(dev, "Invalid power value\n");
-		return -EFAULT;
-	}
-	
-	if(enable == 0) {
-		cmx991_enable_rx(st, false);
-	} else if(enable == 1) {
-		cmx991_enable_rx(st, true);
-	} else {
-		dev_err(dev, "Invalid value for rx power state");
-		return -EFAULT;
-	}
-	                             	
-	return count;
-}
-static ssize_t rx_power_show(struct device *dev, struct device_attribute *attr,
-                             char *buf)
-{
-	struct cmx991_state *st = dev_get_drvdata(dev);
-
-	if(st->rx_power)
-		*buf = '1';
-	else
-		*buf = '0';
-	
-	return 1;
-}
-static DEVICE_ATTR_RWGRP(rx_power);
 
 static ssize_t tx_power_store(struct device *dev, struct device_attribute *attr,
                               const char *buf, size_t count)
@@ -412,7 +380,6 @@ static DEVICE_ATTR_RO(pll_locked);
 
 static struct attribute *control_attrs[] = {
 	&dev_attr_power.attr,
-	&dev_attr_rx_power.attr,
 	&dev_attr_tx_power.attr,
 	&dev_attr_pll_m.attr,
 	&dev_attr_pll_n.attr,
@@ -477,11 +444,8 @@ static int cmx991_probe(struct spi_device *spi) {
 	cmx991_reset(st);
 		
 	// XXX These should come out of platform structure
-	cmx991_set_power(st, false);
 	regmap_field_write(st->general_fields[F_VCO_NR], 0x01);
 
-	cmx991_enable_rx(st, false);
-	
 	//  RX Parameters
 	//XXX These should be in defaults
 	regmap_field_write(st->general_fields[F_RX_MIXLO_DIV], 0);
@@ -503,6 +467,8 @@ static int cmx991_probe(struct spi_device *spi) {
 	//  XXX These should be in defaults
 	cmx991_set_m_divider(st, 0x00FA);
 	cmx991_set_n_divider(st, 0x0AF0);
+	
+	cmx991_set_power(st, false);
 
 	return 0;
 }
