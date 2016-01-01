@@ -377,6 +377,44 @@ static ssize_t pll_locked_show(struct device *dev, struct device_attribute *attr
 }
 static DEVICE_ATTR_RO(pll_locked);
 
+static ssize_t vga_gain_store(struct device *dev, struct device_attribute *attr, 
+                              const char *buf, size_t count)
+{
+	struct cmx991_state *st = dev_get_drvdata(dev);
+	s8 val;
+	int ret;
+	
+	//  This should probably be giving values in dB and parsing them.
+	if(kstrtos8(buf, 0, &val)) {
+		dev_err(dev, "Invalid VGA gain value\n");
+		return -EFAULT;
+	}
+	
+	if(val > 0 || val < -48 || val % 6 != 0) {
+		dev_err(dev, 
+		        "Invalid VGA gain value.  Valid values between 0 and -48 in steps of 6\n");
+		return -EFAULT;
+	}
+	
+	ret = regmap_field_write(st->general_fields[F_RX_VGA], -(val / 6));
+	if(ret) {
+		dev_err(dev, "Couldn't write F_RX_VGA regmap field\n");
+		return ret;
+	}
+	
+	return count;
+}
+
+static ssize_t vga_gain_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct cmx991_state *st = dev_get_drvdata(dev);
+	unsigned int val;
+	
+	regmap_field_read(st->general_fields[F_RX_VGA], &val);
+	return scnprintf(buf, PAGE_SIZE, "%d", -(val * 6));
+}
+DEVICE_ATTR_RWGRP(vga_gain);
+
 
 static struct attribute *control_attrs[] = {
 	&dev_attr_power.attr,
@@ -384,6 +422,7 @@ static struct attribute *control_attrs[] = {
 	&dev_attr_pll_m.attr,
 	&dev_attr_pll_n.attr,
 	&dev_attr_pll_locked.attr,
+	&dev_attr_vga_gain.attr,
 	NULL
 };
 
