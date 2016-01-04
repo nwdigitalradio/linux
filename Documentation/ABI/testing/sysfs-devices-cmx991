@@ -1,0 +1,76 @@
+What:           /sys/bus/spi/devices/spi?.?/control/power
+Date:           2016/01/04
+Contact:        Jeremy McDermond <nh6z@nh6z.net>
+Description:    (RW) Transceiver Power State
+        
+                Controls the power state of the transceiver.  If 0, the transceiver 
+                is off and powered down. This is the initial state of the transceiver
+                on power up.  If set to 1 this powers up the transceiver and puts it 
+                into "receive" mode with all of the appropriate components set up for
+                receive.  This will also power on the IF PLL, so it is advisable to
+                make sure the IF PLL M and N values are correct before powering on
+                the chip.
+
+What:           /sys/bus/spi/devices/spi?.?/control/pll_m
+Date:           2016/01/04
+Contact:        Jeremy McDermond <nh6z@nh6z.net>
+Description:    (RW) PLL M Value
+
+                The M divider value for the IF PLL.  This is a 13-bit unsigned value so 
+                values can range from 1 to 8191 inclusive.  Valid values can be expressed 
+                in hex using the 0x prefix, octal using the 0 prefix or are interpreted 
+                as decimal values without any prefix.
+
+What:           /sys/bus/spi/devices/spi?.?/control/pll_n
+Date:           2016/01/04
+Contact:        Jeremy McDermond <nh6z@nh6z.net>
+Description:    (RW) PLL N Value
+
+                The N divider value for the IF PLL.  This is a 15-bit unsigned value so 
+                values can range from 1 to 32767 inclusive.  Valid values can be 
+                expressed in hex using the 0x prefix, octal using the 0 prefix or are
+                interpreted as decimal values without any prefix.
+
+What:           /sys/bus/spi/devices/spi?.?/control/pll_locked
+Date:           2016/01/04
+Contact:        Jeremy McDermond <nh6z@nh6z.net>
+Description:    (RO) PLL Lock Status
+
+                This shows the status of the IF PLL lock.  If the value is 1, the PLL is 
+                locked.  Otherwise the PLL is unlocked.
+
+What:           /sys/bus/spi/devices/spi?.?/control/vga_gain
+Date:           2016/01/04
+Contact:        Jeremy McDermond <nh6z@nh6z.net>
+Description:    (RW) I/Q Variable Gain Amplifier Gain
+
+                The gain of the I/Q Variable Gain Amplifiers.  Values are in dB in steps
+                of 6dB over a range from 0dB to -48dB.
+
+What:           /sys/bus/spi/devices/spi?.?/control/mixout
+Date:           2016/01/04
+Contact:        Jeremy McDermond <nh6z@nh6z.net>
+Description:    (RW) Mixer Out Routing
+
+                Determines the output pin to which the mixer is connected.  A value of 1
+                indicates that the mixer output is on MIXOUT1 and a value of 2 indicates
+                the mixer output is on MIXOUT2.
+
+What:           /sys/bus/spi/devices/spi?.?/control/ifin
+Date:           2016/01/04
+Contact:        Jeremy McDermond <nh6z@nh6z.net>
+Description:    (RW) IF Input Routing
+
+                Determines the input pin to which the IF is connected.  A value of 1 
+                indicates that the IF input is from IFIP1 and a value of 2 indicates that
+                the IF input is from IFIP2.
+
+What:           /sys/bus/spi/devices/spi?.?/control/iqbandwidth
+Date:           2016/01/04
+Contact:        Jeremy McDermond <nh6z@nh6z.net>
+Description:    (RW) I/Q Filter Bandwidth
+
+                Sets the bandwidth of the receive I/Q filter.  There are two possible 
+                values:  1000 indicates a bandwidth of 1MHz and 100 indicates a bandwidth
+                of 100kHz.  This also means the filter bandwidth is returned expressed in
+                kHz.
