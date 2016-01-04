@@ -316,6 +316,11 @@ static ssize_t pll_m_store(struct device *dev, struct device_attribute *attr,
 		return -EFAULT;
 	}
 	
+	if(m < 1 || m > 0x1FFF) {
+		dev_err(dev, "Invalid pll_m value\n");
+		return -EFAULT;
+	}
+	
 	cmx991_set_m_divider(st, m);
 
 	return count;
@@ -415,6 +420,113 @@ static ssize_t vga_gain_show(struct device *dev, struct device_attribute *attr, 
 }
 DEVICE_ATTR_RWGRP(vga_gain);
 
+static ssize_t mixout_store(struct device *dev, struct device_attribute *attr,
+                            const char *buf, size_t count)
+{
+	struct cmx991_state *st = dev_get_drvdata(dev);
+	u8 val;
+	int ret;
+	
+	if(kstrtou8(buf, 0, &val)) {
+		dev_err(dev, "Invalid mixer out routing\n");
+		return -EFAULT;
+	}
+	
+	if(val < 1 || val > 2) {
+		dev_err(dev, "Invalid mixe rout routing\n");
+		return -EFAULT;
+	}
+	
+	ret = regmap_field_write(st->general_fields[F_RX_MIX_OUT], val - 1);
+	if(ret) {
+		dev_err(dev, "Couldn't write F_RX_MIX_OUT regmap field\n");
+		return ret;
+	}
+	
+	return count;
+}
+
+static ssize_t mixout_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct cmx991_state *st = dev_get_drvdata(dev);
+	unsigned int val;
+	
+	regmap_field_read(st->general_fields[F_RX_MIX_OUT], &val);
+	return scnprintf(buf, PAGE_SIZE, "%d", val + 1);
+}
+DEVICE_ATTR_RWGRP(mixout);
+
+static ssize_t ifin_store(struct device *dev, struct device_attribute *attr,
+                            const char *buf, size_t count)
+{
+	struct cmx991_state *st = dev_get_drvdata(dev);
+	u8 val;
+	int ret;
+	
+	if(kstrtou8(buf, 0, &val)) {
+		dev_err(dev, "Invalid IF in routing\n");
+		return -EFAULT;
+	}
+	
+	if(val < 1 || val > 2) {
+		dev_err(dev, "Invalid IF in routing\n");
+		return -EFAULT;
+	}
+	
+	ret = regmap_field_write(st->general_fields[F_RX_IF_IN], val - 1);
+	if(ret) {
+		dev_err(dev, "Couldn't write F_RX_IF_IN regmap field\n");
+		return ret;
+	}
+	
+	return count;
+}
+
+static ssize_t ifin_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct cmx991_state *st = dev_get_drvdata(dev);
+	unsigned int val;
+	
+	regmap_field_read(st->general_fields[F_RX_IF_IN], &val);
+	return scnprintf(buf, PAGE_SIZE, "%d", val + 1);
+}
+DEVICE_ATTR_RWGRP(ifin);
+
+static ssize_t iqbandwidth_store(struct device *dev, struct device_attribute *attr,
+                            const char *buf, size_t count)
+{
+	struct cmx991_state *st = dev_get_drvdata(dev);
+	u16 val;
+	int ret;
+	
+	if(kstrtou16(buf, 0, &val)) {
+		dev_err(dev, "Invalid IQ Bandwidth\n");
+		return -EFAULT;
+	}
+	
+	if(val != 1000 || val != 100) {
+		dev_err(dev, "Invalid IQ Bandwidth\n");
+		return -EFAULT;
+	}
+	
+	ret = regmap_field_write(st->general_fields[F_RX_IQ_FILTER_BW], val == 1000 ? 1 : 0);
+	if(ret) {
+		dev_err(dev, "Couldn't write F_RX_IQ_FILTER_BW regmap field\n");
+		return ret;
+	}
+	
+	return count;
+}
+
+static ssize_t iqbandwidth_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct cmx991_state *st = dev_get_drvdata(dev);
+	unsigned int val;
+	
+	regmap_field_read(st->general_fields[F_RX_IQ_FILTER_BW], &val);
+	return scnprintf(buf, PAGE_SIZE, "%d", val == 1 ? 1000 : 100);
+}
+DEVICE_ATTR_RWGRP(iqbandwidth);
 
 static struct attribute *control_attrs[] = {
 	&dev_attr_power.attr,
@@ -423,6 +535,9 @@ static struct attribute *control_attrs[] = {
 	&dev_attr_pll_n.attr,
 	&dev_attr_pll_locked.attr,
 	&dev_attr_vga_gain.attr,
+	&dev_attr_mixout.attr,
+	&dev_attr_ifin.attr,
+	&dev_attr_iqbandwidth.attr,
 	NULL
 };
 
