@@ -210,9 +210,9 @@ Info:   Selects the dwc2 USB controller driver
 Load:   dtoverlay=dwc2,<param>=<val>
 Params: dr_mode                  Dual role mode: "host", "peripheral" or "otg"
 
-        g-np-tx-fifo-size        Size of rx fifo size in gadget mode
+        g-rx-fifo-size           Size of rx fifo size in gadget mode
 
-        g-rx-fifo-size           Size of non-periodic tx fifo size in gadget
+        g-np-tx-fifo-size        Size of non-periodic tx fifo size in gadget
                                  mode
 
         g-tx-fifo-size           Size of periodic tx fifo per endpoint
