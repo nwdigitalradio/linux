@@ -563,8 +563,7 @@ static int aic32x4_set_bias_level(struct snd_soc_codec *codec,
 				    AIC32X4_PLLEN, 0);
 
 		/* Switch off master clock */
-		if(codec->dapm.bias_level == SND_SOC_BIAS_ON)
-			clk_disable_unprepare(aic32x4->mclk);
+		clk_disable_unprepare(aic32x4->mclk);
 		break;
 	case SND_SOC_BIAS_OFF:
 		break;
