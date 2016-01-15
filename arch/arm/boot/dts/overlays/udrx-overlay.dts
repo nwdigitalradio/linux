@@ -21,6 +21,8 @@
     fragment@1 {
         target = <&i2s>;
         __overlay__ {
+            clocks = <&cprman 31>;
+            clock-names = "pcm";
             status = "okay";
         };
     };
