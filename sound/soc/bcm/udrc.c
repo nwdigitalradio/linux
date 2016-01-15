@@ -41,8 +41,6 @@ static int snd_rpi_udrc_hw_params(struct snd_pcm_substream *substream, struct sn
         return err;
     }
 
-    //  XXX is this what we really want?
-
     printk(KERN_ERR "In UDRC hw_params, sample bits is %d\n", sample_bits);
     return snd_soc_dai_set_bclk_ratio(cpu_dai, sample_bits * 2);
 }
