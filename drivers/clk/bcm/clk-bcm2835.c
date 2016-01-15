@@ -829,6 +829,37 @@ static const struct bcm2835_clock_data bcm2835_clock_pcm_data = {
 	.frac_bits = 12,
 };
 
+static const struct bcm2835_clock_data bcm2835_clock_gp0_data = {
+	.name = "gp0",
+	.num_mux_parents = ARRAY_SIZE(bcm2835_clock_per_parents),
+	.parents = bcm2835_clock_per_parents,
+	.ctl_reg = CM_GP0CTL,
+	.div_reg = CM_GP0DIV,
+	.int_bits = 12,
+	.frac_bits = 12,
+};
+
+static const struct bcm2835_clock_data bcm2835_clock_gp1_data = {
+	.name = "gp1",
+	.num_mux_parents = ARRAY_SIZE(bcm2835_clock_per_parents),
+	.parents = bcm2835_clock_per_parents,
+	.ctl_reg = CM_GP1CTL,
+	.div_reg = CM_GP1DIV,
+	.int_bits = 12,
+	.frac_bits = 12,
+};
+
+static const struct bcm2835_clock_data bcm2835_clock_gp2_data = {
+	.name = "gp2",
+	.num_mux_parents = ARRAY_SIZE(bcm2835_clock_per_parents),
+	.parents = bcm2835_clock_per_parents,
+	.ctl_reg = CM_GP2CTL,
+	.div_reg = CM_GP2DIV,
+	.int_bits = 12,
+	.frac_bits = 12,
+};
+
+
 struct bcm2835_pll {
 	struct clk_hw hw;
 	struct bcm2835_cprman *cprman;
@@ -1610,6 +1641,14 @@ static int bcm2835_clk_probe(struct platform_device *pdev)
 		bcm2835_register_clock(cprman, &bcm2835_clock_pwm_data);
 	clks[BCM2835_CLOCK_PCM] =
 		bcm2835_register_clock(cprman, &bcm2835_clock_pcm_data);
+		
+	clks[BCM2835_CLOCK_GP0] =
+		bcm2835_register_clock(cprman, &bcm2835_clock_gp0_data);
+	clks[BCM2835_CLOCK_GP1] =
+		bcm2835_register_clock(cprman, &bcm2835_clock_gp1_data);
+	clks[BCM2835_CLOCK_GP2] =
+		bcm2835_register_clock(cprman, &bcm2835_clock_gp2_data);
+
 
 	return of_clk_add_provider(dev->of_node, of_clk_src_onecell_get,
 				   &cprman->onecell);
