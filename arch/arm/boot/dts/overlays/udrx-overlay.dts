@@ -152,4 +152,11 @@
             };
         };
     };
+
+    fragment@7 {
+        target = <&cprman>;
+        __overlay__ {
+            status = "okay";
+        };
+    };
 };
