@@ -76,6 +76,8 @@ struct aic32x4_priv {
 	struct regulator *supply_iov;
 	struct regulator *supply_dv;
 	struct regulator *supply_av;
+	
+	enum snd_soc_bias_level bias_level;
 };
 
 /* 0dB min, 0.5dB steps */
@@ -308,8 +310,6 @@ static int aic32x4_set_dai_sysclk(struct snd_soc_dai *codec_dai,
 	struct snd_soc_codec *codec = codec_dai->codec;
 	struct aic32x4_priv *aic32x4 = snd_soc_codec_get_drvdata(codec);
 
-	printk(KERN_ERR "In aic32x4_set_dai_sysclk\n");
-
 	switch (freq) {
 	case AIC32X4_FREQ_12000000:
 	case AIC32X4_FREQ_24000000:
@@ -327,8 +327,6 @@ static int aic32x4_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 	u8 iface_reg_1;
 	u8 iface_reg_2;
 	u8 iface_reg_3;
-
-	printk(KERN_ERR "In aic32x4_set_dai_fmt\n");
 
 	iface_reg_1 = snd_soc_read(codec, AIC32X4_IFACE1);
 	iface_reg_1 = iface_reg_1 & ~(3 << 6 | 3 << 2);
@@ -388,8 +386,6 @@ static int aic32x4_hw_params(struct snd_pcm_substream *substream,
 	struct aic32x4_priv *aic32x4 = snd_soc_codec_get_drvdata(codec);
 	u8 data;
 	int i;
-
-	printk(KERN_ERR "In aic32x4_hw_params\n");
 
 	i = aic32x4_get_divs(aic32x4->sysclk, params_rate(params));
 	if (i < 0) {
@@ -482,8 +478,6 @@ static int aic32x4_mute(struct snd_soc_dai *dai, int mute)
 	struct snd_soc_codec *codec = dai->codec;
 	u8 dac_reg;
 
-	printk(KERN_ERR "In aic32x4_mute\n");
-
 	dac_reg = snd_soc_read(codec, AIC32X4_DACMUTE) & ~AIC32X4_MUTEON;
 	if (mute)
 		snd_soc_write(codec, AIC32X4_DACMUTE, dac_reg | AIC32X4_MUTEON);
@@ -497,12 +491,12 @@ static int aic32x4_set_bias_level(struct snd_soc_codec *codec,
 {
 	struct aic32x4_priv *aic32x4 = snd_soc_codec_get_drvdata(codec);
 	int ret;
-
-	printk(KERN_ERR "In aic32x4_set_bias_level\n");
+	
+	if(aic32x4->bias_level == level)
+		return 0;
 
 	switch (level) {
 	case SND_SOC_BIAS_ON:
-		printk(KERN_ERR "Setting bias on");
 		/* Switch on master clock */
 		ret = clk_prepare_enable(aic32x4->mclk);
 		if (ret) {
@@ -537,7 +531,6 @@ static int aic32x4_set_bias_level(struct snd_soc_codec *codec,
 	case SND_SOC_BIAS_PREPARE:
 		break;
 	case SND_SOC_BIAS_STANDBY:
-		printk(KERN_ERR "Setting bias to standby");
 		/* Switch off BCLK_N Divider */
 		snd_soc_update_bits(codec, AIC32X4_BCLKN,
 				    AIC32X4_BCLKEN, 0);
@@ -563,11 +556,15 @@ static int aic32x4_set_bias_level(struct snd_soc_codec *codec,
 				    AIC32X4_PLLEN, 0);
 
 		/* Switch off master clock */
-		clk_disable_unprepare(aic32x4->mclk);
+		if(aic32x4->bias_level > SND_SOC_BIAS_STANDBY)
+			clk_disable_unprepare(aic32x4->mclk);
 		break;
 	case SND_SOC_BIAS_OFF:
 		break;
 	}
+	
+	aic32x4->bias_level = level;
+	
 	return 0;
 }
 
@@ -879,6 +876,8 @@ static int aic32x4_i2c_probe(struct i2c_client *i2c,
 			       GFP_KERNEL);
 	if (aic32x4 == NULL)
 		return -ENOMEM;
+		
+	aic32x4->bias_level = SND_SOC_BIAS_OFF;
 
 	aic32x4->regmap = devm_regmap_init_i2c(i2c, &aic32x4_i2c_regmap);
 	if (IS_ERR(aic32x4->regmap))
@@ -893,20 +892,17 @@ static int aic32x4_i2c_probe(struct i2c_client *i2c,
 	}
 
 	if (pdata) {
-		printk(KERN_ERR "Have pdata");
 		aic32x4->power_cfg = pdata->power_cfg;
 		aic32x4->swapdacs = pdata->swapdacs;
 		aic32x4->micpga_routing = pdata->micpga_routing;
 		aic32x4->rstn_gpio = pdata->rstn_gpio;
 	} else if (np) {
-		printk(KERN_ERR "Have DT");
 		ret = aic32x4_parse_dt(aic32x4, np, &i2c->dev);
 		if (ret) {
 			dev_err(&i2c->dev, "Failed to parse DT node\n");
 			return ret;
 		}
 	} else {
-		printk(KERN_ERR "Have None");
 		aic32x4->power_cfg = 0;
 		aic32x4->swapdacs = false;
 		aic32x4->micpga_routing = 0;
@@ -996,6 +992,8 @@ static int aic32x4_spi_probe(struct spi_device *spi)
 			       GFP_KERNEL);
 	if (aic32x4 == NULL)
 		return -ENOMEM;
+		
+	aic32x4->bias_level = SND_SOC_BIAS_OFF;
 
 	aic32x4->regmap = devm_regmap_init_spi(spi, &aic32x4_spi_regmap);
 	if (IS_ERR(aic32x4->regmap))
@@ -1010,20 +1008,17 @@ static int aic32x4_spi_probe(struct spi_device *spi)
 	}
 
 	if (pdata) {
-		printk(KERN_ERR "Have pdata");
 		aic32x4->power_cfg = pdata->power_cfg;
 		aic32x4->swapdacs = pdata->swapdacs;
 		aic32x4->micpga_routing = pdata->micpga_routing;
 		aic32x4->rstn_gpio = pdata->rstn_gpio;
 	} else if (np) {
-		printk(KERN_ERR "Have DT");
 		ret = aic32x4_parse_dt(aic32x4, np, &spi->dev);
 		if (ret) {
 			dev_err(&spi->dev, "Failed to parse DT node\n");
 			return ret;
 		}
 	} else {
-		printk(KERN_ERR "Have None");
 		aic32x4->power_cfg = 0;
 		aic32x4->swapdacs = false;
 		aic32x4->micpga_routing = 0;
