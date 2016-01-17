@@ -2,7 +2,7 @@
  * ASoC Driver for the Universal Digital Radio Controller
  *
  * Author:	Jeremy McDermond <nh6z@nh6z.net>
- *		Copyright (c) 2015 Northwest Digtial Radio
+ *		    Copyright (c) 2015 Northwest Digtial Radio
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -31,17 +31,8 @@ static int snd_rpi_udrc_hw_params(struct snd_pcm_substream *substream, struct sn
 
     struct snd_soc_pcm_runtime *rtd = substream->private_data;
     struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
-    struct snd_soc_dai *codec_dai = rtd->codec_dai;
-    int err;
-    unsigned int sample_bits = snd_pcm_format_physical_width(params_format(params)); //  XXX Is this what we really want?
+    unsigned int sample_bits = snd_pcm_format_physical_width(params_format(params));
 
-    err = snd_soc_dai_set_sysclk(codec_dai, 0, 25000000, SND_SOC_CLOCK_IN);
-    if(err < 0) {
-        dev_err(rtd->card->dev, "codec_dai clock not set\n");
-        return err;
-    }
-
-    printk(KERN_ERR "In UDRC hw_params, sample bits is %d\n", sample_bits);
     return snd_soc_dai_set_bclk_ratio(cpu_dai, sample_bits * 2);
 }
 
@@ -92,11 +83,11 @@ static int snd_rpi_udrc_probe(struct platform_device *pdev) {
         	dai->codec_of_node = codec_node;
         }        
     }
-
+            
     ret = snd_soc_register_card(&snd_rpi_udrc);
     if(ret)
         dev_err(&pdev->dev, "snd_soc_register_card() failed: %d\n", ret);
-
+    
     return ret;
 }
 

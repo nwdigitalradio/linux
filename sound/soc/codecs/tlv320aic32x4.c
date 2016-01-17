@@ -304,6 +304,21 @@ static inline int aic32x4_get_divs(int mclk, int rate)
 	return -EINVAL;
 }
 
+static inline long aic32x4_get_mclk_rate(struct snd_soc_codec *codec)
+{
+	int i;
+	struct aic32x4_priv *aic32x4 = snd_soc_codec_get_drvdata(codec);	
+	long mclk_rate = clk_get_rate(aic32x4->mclk);
+	
+	for(i = 0; i < ARRAY_SIZE(aic32x4_divs); i++) {
+		if(clk_round_rate(aic32x4->mclk, aic32x4_divs[i].mclk) == mclk_rate)
+			return aic32x4_divs[i].mclk;
+	}
+	
+	dev_err(codec->dev, "Unsupported master clock rate %ld", mclk_rate);
+	return -EINVAL;
+}
+
 static int aic32x4_set_dai_sysclk(struct snd_soc_dai *codec_dai,
 				  int clk_id, unsigned int freq, int dir)
 {
@@ -386,10 +401,14 @@ static int aic32x4_hw_params(struct snd_pcm_substream *substream,
 	struct aic32x4_priv *aic32x4 = snd_soc_codec_get_drvdata(codec);
 	u8 data;
 	int i;
+	long int mclk_rate;
+	
+	mclk_rate = aic32x4_get_mclk_rate(codec);
+	dev_info(codec->dev, "Setting DAI system clock to %ld", mclk_rate);
 
-	i = aic32x4_get_divs(aic32x4->sysclk, params_rate(params));
+	i = aic32x4_get_divs(mclk_rate, params_rate(params));
 	if (i < 0) {
-		printk(KERN_ERR "aic32x4: sampling rate not supported\n");
+		dev_err(codec->dev, "Sampling rate not supported\n");
 		return i;
 	}
 
