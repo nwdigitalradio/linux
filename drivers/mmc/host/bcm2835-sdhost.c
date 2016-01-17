@@ -1823,6 +1823,8 @@ static int bcm2835_sdhost_probe(struct platform_device *pdev)
 		goto err;
 	}
 
+	clk_prepare_enable(clk);
+
 	host->max_clk = clk_get_rate(clk);
 
 	host->irq = platform_get_irq(pdev, 0);
@@ -1861,6 +1863,7 @@ err:
 static int bcm2835_sdhost_remove(struct platform_device *pdev)
 {
 	struct bcm2835_host *host = platform_get_drvdata(pdev);
+	struct clk *clk;
 
 	pr_debug("bcm2835_sdhost_remove\n");
 
@@ -1873,6 +1876,10 @@ static int bcm2835_sdhost_remove(struct platform_device *pdev)
 	del_timer_sync(&host->timer);
 
 	tasklet_kill(&host->finish_tasklet);
+
+	clk = devm_clk_get(&pdev->dev, NULL);
+	if (!IS_ERR(clk)) 
+		clk_disable_unprepare(clk);
 
 	mmc_free_host(host->mmc);
 	platform_set_drvdata(pdev, NULL);
