@@ -116,3 +116,4 @@ module_platform_driver(snd_rpi_udrc_driver);
 MODULE_AUTHOR("Jeremy McDermond <nh6z@nh6z.net>");
 MODULE_DESCRIPTION("ASoC Driver for the Universal Digital Radio Controller");
 MODULE_LICENSE("GPL v2");
+MODULE_SOFTDEP("pre: snd_soc_tlv320aic32x4 snd_soc_bcm2835_i2s");
