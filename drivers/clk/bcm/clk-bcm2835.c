@@ -1668,7 +1668,20 @@ static struct platform_driver bcm2835_clk_driver = {
 	.probe          = bcm2835_clk_probe,
 };
 
-builtin_platform_driver(bcm2835_clk_driver);
+static int __init bcm2835_clk_init(void)
+{
+        return platform_driver_register(&bcm2835_clk_driver);
+}
+subsys_initcall(bcm2835_clk_init);
+
+static void __exit bcm2835_clk_cleanup(void)
+{
+        platform_driver_unregister(&bcm2835_clk_driver);
+}
+module_exit(bcm2835_clk_cleanup);
+
+
+// builtin_platform_driver(bcm2835_clk_driver);
 
 MODULE_AUTHOR("Eric Anholt <eric@anholt.net>");
 MODULE_DESCRIPTION("BCM2835 clock driver");
