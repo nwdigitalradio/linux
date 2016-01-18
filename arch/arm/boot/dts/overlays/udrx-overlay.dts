@@ -10,7 +10,7 @@
     fragment@0 {
         target-path = "/clocks";
         __overlay__ {
-            udrc0_osc: udrc0_osc {
+            udrx_osc: udrx_osc {
                 compatible = "fixed-clock";
                 #clock-cells = <0>;
                 clock-frequency = <25000000>;
@@ -72,6 +72,7 @@
             #address-cells = <1>;
             #size-cells = <0>;
             pinctrl-0 = <&spi0_pins &spi0_cs_pins>;
+            pinctrl-names = "default";
             status = "okay";
             cs-gpios = <0>, <0>, <&gpio 17 1>, <&gpio 27 1>;
 
@@ -102,7 +103,7 @@
 
                 spi-max-frequency = <500000>;
 
-                clocks = <&udrc0_osc>;
+                clocks = <&udrx_osc>;
                 clock-names = "mclk";
 
                 iov-supply = <&udrc0_ldoin>;
@@ -134,11 +135,7 @@
                 status = "okay";
                 
                 spi-max-frequency = <500000>;
-                spi-cpha;
 
-                clocks = <&udrc0_osc>;
-                clock-names = "mclk";
-                
                 vcc-supply = <&udrc0_ldoin>;                
             };
             
@@ -160,5 +157,12 @@
         __overlay__ {
             status = "okay";
         };
+    };
+    
+    fragment@8 {
+    	target = <&sdhost>;
+    	__overlay__ {
+    		clocks = <&cprman 28>;
+    	};
     };
 };
