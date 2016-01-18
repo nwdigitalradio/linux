@@ -256,11 +256,6 @@ static int ad9832_probe(struct spi_device *spi)
 		phase[2] = pdata->phase2;
 		phase[3] = pdata->phase3;
 	} else if(np) {
-		mclk = clk_get_rate(devm_clk_get(&spi->dev, "mclk"));
-		if(mclk == 0) {
-			dev_err(&spi->dev, "No master clock defined\n");
-			return -ENODEV;
-		}
 		of_property_read_u32_array(np, "adi,power-up-frequencies", (u32 *) freq, 2);
 		of_property_read_u16_array(np, "adi,power-up-phases", (u16 *) phase, 4);
 	} else {
@@ -284,7 +279,6 @@ static int ad9832_probe(struct spi_device *spi)
 		
 	spi_set_drvdata(spi, st);
 
-	st->mclk = mclk;
 	st->reg = reg;
 	st->spi = spi;
 
