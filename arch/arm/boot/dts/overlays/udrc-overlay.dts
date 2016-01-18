@@ -8,24 +8,15 @@
 / {
     compatible = "brcm,bcm2835", "brcm,bcm2836", "brcm,bcm2708", "brcm,bcm2709";
     fragment@0 {
-        target-path = "/clocks";
-        __overlay__ {
-            udrc0_osc: udrc0_osc {
-                compatible = "fixed-clock";
-                #clock-cells = <0>;
-                clock-frequency = <25000000>;
-            };
-        };
-    };
-
-    fragment@1 {
         target = <&i2s>;
         __overlay__ {
+        	clocks = <&cprman 31>;
+            clock-names = "pcm";
             status = "okay";
         };
     };
 
-    fragment@2 {
+    fragment@1 {
         target-path = "/";
         __overlay__ {
             regulators {
@@ -44,7 +35,7 @@
         };
     };
 
-    fragment@3 {
+    fragment@2 {
         target = <&i2c1>;
         __overlay__ {
             #address-cells = <1>;
@@ -56,8 +47,12 @@
                 reg = <0x18>;
                 status = "okay";
 
-                clocks = <&udrc0_osc>;
+                clocks = <&cprman 32>;
                 clock-names = "mclk";
+                assigned-clocks = <&cprman 32>;
+                assigned-clock-rates = <25000000>;
+                pinctrl-names = "default";
+                pinctrl-0 = <&gpclk0_pin>;
 
                 iov-supply = <&udrc0_ldoin>;
                 ldoin-supply = <&udrc0_ldoin>;
@@ -72,7 +67,7 @@
         };
     };
 
-    fragment@4 {
+    fragment@3 {
 		target = <&sound>;
 		__overlay__ {
 			compatible = "nwdr,udrc";
@@ -81,5 +76,30 @@
 			status = "okay";
 		};
 	};
+	
+	fragment@4 {
+        target = <&gpio>;
+        __overlay__ {
+             gpclk0_pin: gpclk0_pin {
+            	brcm,pins = <4>;
+            	brcm,function = <4>;
+            };
+        };
+    };
+
+    fragment@5 {
+        target = <&cprman>;
+        __overlay__ {
+            status = "okay";
+        };
+    };
+    
+    fragment@6 {
+    	target = <&sdhost>;
+    	__overlay__ {
+    		clocks = <&cprman 28>;
+    	};
+    };
+
 
 };
