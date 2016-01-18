@@ -243,12 +243,12 @@ static int ad9832_probe(struct spi_device *spi)
 	struct regulator *reg;
 	struct device_node *np = spi->dev.of_node;
 	int ret;
-	unsigned long mclk = 0;
 	unsigned long freq[2] = { 10000000, 11000000 };
 	unsigned short phase[4] = { 0, 0, 0, 0 };
 	
+	spi->mode |= SPI_CPHA;
+	
 	if(pdata) {
-		mclk = pdata->mclk;
 		freq[0] = pdata->freq0;
 		freq[1] = pdata->freq1;
 		phase[0] = pdata->phase0;
