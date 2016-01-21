@@ -188,12 +188,18 @@ static const struct snd_kcontrol_new left_input_mixer_controls[] = {
 	SOC_DAPM_SINGLE("IN1_L P Switch", AIC32X4_LMICPGAPIN, 6, 1, 0),
 	SOC_DAPM_SINGLE("IN2_L P Switch", AIC32X4_LMICPGAPIN, 4, 1, 0),
 	SOC_DAPM_SINGLE("IN3_L P Switch", AIC32X4_LMICPGAPIN, 2, 1, 0),
+	SOC_DAPM_SINGLE("CM1_L N Switch", AIC32X4_LMICPGANIN, 6, 1, 0),
+	SOC_DAPM_SINGLE("IN2_R N Switch", AIC32X4_LMICPGANIN, 4, 1, 0),
+	SOC_DAPM_SINGLE("IN3_R N Switch", AIC32X4_LMICPGANIN, 2, 1, 0),
 };
 
 static const struct snd_kcontrol_new right_input_mixer_controls[] = {
 	SOC_DAPM_SINGLE("IN1_R P Switch", AIC32X4_RMICPGAPIN, 6, 1, 0),
 	SOC_DAPM_SINGLE("IN2_R P Switch", AIC32X4_RMICPGAPIN, 4, 1, 0),
 	SOC_DAPM_SINGLE("IN3_R P Switch", AIC32X4_RMICPGAPIN, 2, 1, 0),
+	SOC_DAPM_SINGLE("CM1_R N Switch", AIC32X4_RMICPGANIN, 6, 1, 0),
+	SOC_DAPM_SINGLE("IN1_L N Switch", AIC32X4_RMICPGANIN, 4, 1, 0),
+	SOC_DAPM_SINGLE("IN3_L N Switch", AIC32X4_RMICPGANIN, 2, 1, 0),
 };
 
 static const struct snd_soc_dapm_widget aic32x4_dapm_widgets[] = {
@@ -237,6 +243,8 @@ static const struct snd_soc_dapm_widget aic32x4_dapm_widgets[] = {
 	SND_SOC_DAPM_INPUT("IN2_R"),
 	SND_SOC_DAPM_INPUT("IN3_L"),
 	SND_SOC_DAPM_INPUT("IN3_R"),
+	SND_SOC_DAPM_INPUT("CM1_L"),
+	SND_SOC_DAPM_INPUT("CM1_R"),
 };
 
 static const struct snd_soc_dapm_route aic32x4_dapm_routes[] = {
@@ -268,6 +276,9 @@ static const struct snd_soc_dapm_route aic32x4_dapm_routes[] = {
 	{"Left Input Mixer", "IN1_L P Switch", "IN1_L"},
 	{"Left Input Mixer", "IN2_L P Switch", "IN2_L"},
 	{"Left Input Mixer", "IN3_L P Switch", "IN3_L"},
+	{"Left Input Mixer", "CM1_L N Switch", "CM1_L"},
+	{"Left Input Mixer", "IN2_R N Switch", "IN2_R"},
+	{"Left Input Mixer", "IN3_R N Switch", "IN3_R"},
 
 	{"Left ADC", NULL, "Left Input Mixer"},
 
@@ -275,6 +286,9 @@ static const struct snd_soc_dapm_route aic32x4_dapm_routes[] = {
 	{"Right Input Mixer", "IN1_R P Switch", "IN1_R"},
 	{"Right Input Mixer", "IN2_R P Switch", "IN2_R"},
 	{"Right Input Mixer", "IN3_R P Switch", "IN3_R"},
+	{"Right Input Mixer", "CM1_R N Switch", "CM1_R"},
+	{"Right Input Mixer", "IN1_L N Switch", "IN1_L"},
+	{"Right Input Mixer", "IN3_L N Switch", "IN3_L"},
 
 	{"Right ADC", NULL, "Right Input Mixer"},
 };
@@ -658,20 +672,6 @@ static int aic32x4_probe(struct snd_soc_codec *codec)
 		tmp_reg |= AIC32X4_LDOIN2LO;
 
 	snd_soc_write(codec, AIC32X4_CMMODE, tmp_reg);
-
-	/* Mic PGA routing */
-	if (aic32x4->micpga_routing & AIC32X4_MICPGA_ROUTE_LMIC_IN2R_10K)
-		snd_soc_write(codec, AIC32X4_LMICPGANIN,
-				AIC32X4_LMICPGANIN_IN2R_10K);
-	else
-		snd_soc_write(codec, AIC32X4_LMICPGANIN,
-				AIC32X4_LMICPGANIN_CM1L_10K);
-	if (aic32x4->micpga_routing & AIC32X4_MICPGA_ROUTE_RMIC_IN1L_10K)
-		snd_soc_write(codec, AIC32X4_RMICPGANIN,
-				AIC32X4_RMICPGANIN_IN1L_10K);
-	else
-		snd_soc_write(codec, AIC32X4_RMICPGANIN,
-				AIC32X4_RMICPGANIN_CM1R_10K);
 
 	/*
 	 * Workaround: for an unknown reason, the ADC needs to be powered up
