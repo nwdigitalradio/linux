@@ -222,7 +222,7 @@ static void cmx991_set_power(struct cmx991_state *st, bool power)
 
 	//  Turn on the receiver
 	regmap_update_bits(st->general_regmap, CMX991_RX_CONTROL, 0xF9,
-	                   st->power ? 0xF8 : 0x00);
+	                   st->power ? 0xF9 : 0x00);
 	                   
 	//  Make sure the transmitter is off
 	cmx991_enable_tx(st, false);
@@ -528,6 +528,43 @@ static ssize_t iqbandwidth_show(struct device *dev, struct device_attribute *att
 }
 DEVICE_ATTR_RWGRP(iqbandwidth);
 
+static ssize_t calibrate_store(struct device *dev, struct device_attribute *attr,
+                               const char *buf, size_t count)
+{
+	struct cmx991_state *st = dev_get_drvdata(dev);
+	u8 val;
+	int ret;
+	
+	if(kstrtou8(buf, 0, &val)) {
+		dev_err(dev, "Invalid calibration value\n");
+		return -EFAULT;
+	}
+	
+	if(val > 1) {
+		dev_err(dev, "Invalid calibration value\n");
+		return -EFAULT;
+	}
+	
+	ret = regmap_field_write(st->general_fields[F_RX_CAL_EN], val);
+	if(ret) {
+		dev_err(dev, "Couldn't write F_RX_CAL_EN regmap field\n");
+		return ret;
+	}
+	
+	return count;
+}
+
+static ssize_t calibrate_show(struct device *dev, struct device_attribute *attr,
+                              char *buf)
+{
+	struct cmx991_state *st = dev_get_drvdata(dev);
+	unsigned int val;
+	
+	regmap_field_read(st->general_fields[F_RX_CAL_EN], &val);
+	return scnprintf(buf, PAGE_SIZE, "%d", val);
+}
+DEVICE_ATTR_RWGRP(calibrate);
+
 static struct attribute *control_attrs[] = {
 	&dev_attr_power.attr,
 	&dev_attr_tx_power.attr,
@@ -538,6 +575,7 @@ static struct attribute *control_attrs[] = {
 	&dev_attr_mixout.attr,
 	&dev_attr_ifin.attr,
 	&dev_attr_iqbandwidth.attr,
+	&dev_attr_calibrate.attr,
 	NULL
 };
 
