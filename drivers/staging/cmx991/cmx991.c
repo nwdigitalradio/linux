@@ -222,7 +222,7 @@ static void cmx991_set_power(struct cmx991_state *st, bool power)
 
 	//  Turn on the receiver
 	regmap_update_bits(st->general_regmap, CMX991_RX_CONTROL, 0xF9,
-	                   st->power ? 0xF9 : 0x00);
+	                   st->power ? 0xF8 : 0x00);
 	                   
 	//  Make sure the transmitter is off
 	cmx991_enable_tx(st, false);
