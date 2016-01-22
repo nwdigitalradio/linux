@@ -710,10 +710,6 @@ static int aic32x4_parse_dt(struct aic32x4_priv *aic32x4,
 	aic32x4->swapdacs = false;
 	aic32x4->micpga_routing = 0;
 	aic32x4->rstn_gpio = of_get_named_gpio(np, "reset-gpios", 0);
-
-	//  XXX This should be through the device tree, maybe the pin interface
-	/* aic32x4->micpga_routing = AIC32X4_MICPGA_ROUTE_LMIC_IN2R_10K |
-	                          AIC32X4_MICPGA_ROUTE_RMIC_IN1L_10K; */
 	                          
 	if(!of_property_read_u32_index(np, "ti,common-mode-microvolt", 0, &common_mode_voltage)) {
 		switch(common_mode_voltage) {
@@ -1046,8 +1042,6 @@ static int aic32x4_spi_probe(struct spi_device *spi)
 		aic32x4->rstn_gpio = -1;
 	}
 	
-	spi->mode |= SPI_CPHA;
-
 	aic32x4->mclk = devm_clk_get(&spi->dev, "mclk");
 	if (IS_ERR(aic32x4->mclk)) {
 		dev_err(&spi->dev, "Failed getting the mclk. The current implementation does not support the usage of this codec without mclk\n");
