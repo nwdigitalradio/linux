@@ -246,8 +246,6 @@ static int ad9832_probe(struct spi_device *spi)
 	unsigned long freq[2] = { 10000000, 11000000 };
 	unsigned short phase[4] = { 0, 0, 0, 0 };
 	
-	spi->mode |= SPI_CPHA;
-	
 	if(pdata) {
 		freq[0] = pdata->freq0;
 		freq[1] = pdata->freq1;
