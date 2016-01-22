@@ -91,7 +91,7 @@
                 reg = <0>;
                 status = "okay";
                 
-                spi-max-frequency = <500000>;
+                spi-max-frequency = <20000000>;
             };
 
             tlv320aic32x4: tlv320aic32x4@1 {
@@ -100,8 +100,9 @@
                 compatible = "ti,tlv320aic32x4";
                 reg = <1>;
                 status = "okay";
-
-                spi-max-frequency = <500000>;
+                
+                spi-max-frequency = <20000000>;
+                spi-cpha;
 
                 clocks = <&udrx_osc>;
                 clock-names = "mclk";
@@ -124,7 +125,7 @@
             	reg = <2>;
             	status = "okay";
             	
-            	spi-max-frequency = <500000>;
+            	spi-max-frequency = <5000000>;
             };
             
             ad9832@3 {
@@ -134,7 +135,8 @@
                 reg = <3>;
                 status = "okay";
                 
-                spi-max-frequency = <500000>;
+                spi-max-frequency = <20000000>;
+                spi-cpha;
 
                 vcc-supply = <&udrc0_ldoin>;                
             };
