@@ -325,7 +325,9 @@ static inline long aic32x4_get_mclk_rate(struct snd_soc_codec *codec)
 	long mclk_rate = clk_get_rate(aic32x4->mclk);
 	
 	for(i = 0; i < ARRAY_SIZE(aic32x4_divs); i++) {
-		if(clk_round_rate(aic32x4->mclk, aic32x4_divs[i].mclk) == mclk_rate)
+		long round_rate = clk_round_rate(aic32x4->mclk, aic32x4_divs[i].mclk);
+		if((round_rate > 0) && (abs(aic32x4_divs[i].mclk - round_rate) < 10000) && 
+		   (round_rate == mclk_rate))
 			return aic32x4_divs[i].mclk;
 	}
 	
