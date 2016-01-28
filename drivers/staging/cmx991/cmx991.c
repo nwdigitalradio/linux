@@ -420,6 +420,71 @@ static ssize_t vga_gain_show(struct device *dev, struct device_attribute *attr, 
 }
 DEVICE_ATTR_RWGRP(vga_gain);
 
+static ssize_t tx_gain_store(struct device *dev, struct device_attribute *attr,
+                             const char *buf, size_t count)
+{
+	struct cmx991_state *st = dev_get_drvdata(dev);
+	s8 val;
+	int ret;
+	int writeval;
+	
+	if(kstrtos8(buf, 0, &val)) {
+		dev_err(dev, "Invalid TX Gain");
+		return -EFAULT;
+	}
+	
+	switch(val) {
+		case -6:
+			writeval = 1;
+			break;
+		case 0:
+			writeval = 0;
+			break;
+		case 6:
+			writeval = 2;
+			break;
+		default:
+			dev_err(dev, "Invalid TX Gain");
+			return -EFAULT;
+			break;
+	}
+	
+	ret = regmap_field_write(st->general_fields[F_TX_GAIN], writeval);
+	if(ret) {
+		dev_err(dev, "Couldn't write F_RX_GAIN regmap field");
+		return ret;
+	}
+	
+	return count;
+}
+
+static ssize_t tx_gain_show(struct device *dev, struct device_attribute *attr,
+                            char *buf)
+{
+	struct cmx991_state *st = dev_get_drvdata(dev);
+	unsigned int readval;
+	s8 val;
+	
+	regmap_field_read(st->general_fields[F_TX_GAIN], &readval);
+	switch(readval) {
+		case 0:
+			val = 0;
+			break;
+		case 1:
+			val = -6;
+			break;
+		case 2:
+			val = 6;
+			break;
+		default:
+			dev_err(dev, "Got weird value %d in F_RX_GAIN register", readval);
+			return -EFAULT;
+	}
+	
+	return scnprintf(buf, PAGE_SIZE, "%d", val);	
+}
+DEVICE_ATTR_RWGRP(tx_gain);
+
 static ssize_t mixout_store(struct device *dev, struct device_attribute *attr,
                             const char *buf, size_t count)
 {
@@ -576,6 +641,7 @@ static struct attribute *control_attrs[] = {
 	&dev_attr_ifin.attr,
 	&dev_attr_iqbandwidth.attr,
 	&dev_attr_calibrate.attr,
+	&dev_attr_tx_gain.attr,
 	NULL
 };
 
@@ -649,7 +715,7 @@ static int cmx991_probe(struct spi_device *spi) {
 	
 	//  TX Parameters
 	//  XXX These should be in defaults
-	regmap_field_write(st->general_fields[F_TX_IF_BW], 3);
+	regmap_field_write(st->general_fields[F_TX_IF_BW], 0);
 	regmap_field_write(st->general_fields[F_TX_HILO], 1);
 	regmap_field_write(st->general_fields[F_TX_RFDIV], 0);
 	regmap_field_write(st->general_fields[F_TX_IFDIV], 0);
