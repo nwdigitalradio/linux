@@ -96,6 +96,8 @@ struct ad9832_state {
 		__be16			phase_data[2];
 		__be16			data;
 	};
+	
+	unsigned char		frequency_select;
 };
 
 /*

@@ -157,10 +157,20 @@ static ssize_t frequency_select_store(struct device *dev, struct device_attribut
 	ret = spi_sync(st->spi, &st->msg);
 	if(ret)
 		return ret;
+		
+	st->frequency_select = select;
 	
 	return len;
 }
-DEVICE_ATTR_WO(frequency_select);
+
+static ssize_t frequency_select_show(struct device *dev, struct device_attribute *attr,
+                                     char *buf)
+{
+	struct ad9832_state *st = dev_get_drvdata(dev);
+	
+	return scnprintf(buf, PAGE_SIZE, "%d", st->frequency_select);
+}
+DEVICE_ATTR_RW(frequency_select);
 
 static ssize_t phase_select_store(struct device *dev, struct device_attribute *attr,
                                   const char *buf, size_t len) {
