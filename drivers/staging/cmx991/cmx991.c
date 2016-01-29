@@ -720,7 +720,7 @@ static int cmx991_probe(struct spi_device *spi) {
 	
 	//  TX Parameters
 	//  XXX These should be in defaults
-	regmap_field_write(st->general_fields[F_TX_IF_BW], 0);
+	regmap_field_write(st->general_fields[F_TX_IF_BW], 3);
 	regmap_field_write(st->general_fields[F_TX_HILO], 1);
 	regmap_field_write(st->general_fields[F_TX_RFDIV], 0);
 	regmap_field_write(st->general_fields[F_TX_IFDIV], 0);
