@@ -288,6 +288,11 @@ static ssize_t tx_power_store(struct device *dev, struct device_attribute *attr,
 		dev_err(dev, "Invalid value for rx power state");
 		return -EFAULT;
 	}
+	
+	//  Notify people that our TX state has changed
+	//  XXX This should probably be modified so that the strings are
+	//  XXX derived from device_attribute and friends.
+	sysfs_notify(&dev->kobj, "control", attr->attr.name);
 	                             	
 	return count;
 }
