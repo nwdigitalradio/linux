@@ -160,6 +160,11 @@ static ssize_t frequency_select_store(struct device *dev, struct device_attribut
 		
 	st->frequency_select = select;
 	
+	//  Notify people that our state has changed
+	//  XXX This should probably be modified so that the strings are
+	//  XXX derived from device_attribute and friends.
+	sysfs_notify(&dev->kobj, "control", attr->attr.name);
+	
 	return len;
 }
 
