@@ -118,6 +118,7 @@
 #define CM_SDCCTL		0x1a8
 #define CM_SDCDIV		0x1ac
 #define CM_ARMCTL		0x1b0
+#define CM_ARMDIV		0x1b4
 #define CM_AVEOCTL		0x1b8
 #define CM_AVEODIV		0x1bc
 #define CM_EMMCCTL		0x1c0
@@ -1515,11 +1516,33 @@ static const char * const bcm2835_clock_dsi1_parents[] = {
 	.parents = bcm2835_clock_dsi1_parents,				\
 	__VA_ARGS__)
 
+/* arm parent mux */
+static const char * const bcm2835_clock_arm_parents[] = {
+	"gnd",
+	"xosc",
+	"testdebug0",
+	"testdebug1",
+	/*
+	 * see comments for dsi0 for possible candidates
+	 * should contain "pllb_arm" at one position
+	 *   plla_core/per
+	 *   pllb_arm or pllb_core/per
+	 *   pllc_core/per
+	 *   plld_core/per
+	 *   pllh_aux/pix
+	 * up to 16 different parents
+	 */
+};
+
+#define REGISTER_ARM_CLK(...)	REGISTER_CLK(				\
+	.num_mux_parents = ARRAY_SIZE(bcm2835_clock_arm_parents),	\
+	.parents = bcm2835_clock_arm_parents,				\
+	__VA_ARGS__)
+
 /*
  * the real definition of all the pll, pll_dividers and clocks
  * these make use of the above REGISTER_* macros
  */
-
 static const struct bcm2835_clk_desc clk_desc_array[] = {
 	/* the PLL + PLL dividers */
 
@@ -2008,6 +2031,15 @@ static const struct bcm2835_clk_desc clk_desc_array[] = {
 		.name = "dsi1_image",
 		.ctl_reg = CM_DSI1PCTL,
 		.div_reg = CM_DSI1PDIV,
+		.int_bits = 1,
+		.frac_bits = 0),
+
+	/* arm clocks */
+	[BCM2835_CLOCK_DSI1_IMAGE] = REGISTER_ARM_CLK(
+		/* this is in principle a gate with a 4 bit mux */
+		.name = "arm",
+		.ctl_reg = CM_ARMCTL,
+		.div_reg = CM_ARMDIV,
 		.int_bits = 1,
 		.frac_bits = 0),
 
