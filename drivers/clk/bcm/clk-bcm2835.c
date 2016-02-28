@@ -407,6 +407,7 @@ struct bcm2835_clock_data {
 	/* Number of fractional bits in the divider */
 	u32 frac_bits;
 
+	bool is_mash_clock;
 	bool is_vpu_clock;
 };
 
@@ -780,10 +781,19 @@ static u32 bcm2835_clock_choose_div(struct clk_hw *hw,
 		div += unused_frac_mask + 1;
 	div &= ~unused_frac_mask;
 
-	/* Clamp to the limits. */
-	div = max(div, unused_frac_mask + 1);
-	div = min_t(u32, div, GENMASK(data->int_bits + CM_DIV_FRAC_BITS - 1,
-				      CM_DIV_FRAC_BITS - data->frac_bits));
+	/* Clamp to the limits for the clock type */
+	if (data->is_mash_clock) {
+		/* clamp to min divider 2 */
+		div = max_t(u32, div, 2 << CM_DIV_FRAC_BITS);
+		/* clamp to max int divider */
+		div = min_t(u32, div,
+			    (BIT(data->int_bits) - 1) << CM_DIV_FRAC_BITS);
+	} else {
+		div = max(div, unused_frac_mask + 1);
+		div = min_t(u32, div,
+			    GENMASK(data->int_bits + CM_DIV_FRAC_BITS - 1,
+				    CM_DIV_FRAC_BITS - data->frac_bits));
+	}
 
 	return div;
 }
@@ -1512,13 +1522,15 @@ static const struct bcm2835_clk_desc clk_desc_array[] = {
 		.ctl_reg = CM_PCMCTL,
 		.div_reg = CM_PCMDIV,
 		.int_bits = 12,
-		.frac_bits = 12),
+		.frac_bits = 12,
+		.is_mash_clock = true),
 	[BCM2835_CLOCK_PWM]	= REGISTER_PER_CLK(
 		.name = "pwm",
 		.ctl_reg = CM_PWMCTL,
 		.div_reg = CM_PWMDIV,
 		.int_bits = 12,
-		.frac_bits = 12),
+		.frac_bits = 12,
+		.is_mash_clock = true),
 	[BCM2835_CLOCK_UART]	= REGISTER_PER_CLK(
 		.name = "uart",
 		.ctl_reg = CM_UARTCTL,
