@@ -447,6 +447,8 @@ struct bcm2835_gate_data {
 	const char *parent;
 
 	u32 ctl_reg;
+
+	bool requires_pm_debug;
 };
 
 struct bcm2835_pll {
@@ -2051,10 +2053,22 @@ static const struct bcm2835_clk_desc clk_desc_array[] = {
 	 * don't bother exposing) are individual gates off of the
 	 * non-stop vpu clock.
 	 */
+	[BCM2835_CLOCK_PERA] = REGISTER_GATE(
+		.name = "pera",
+		.parent = "vpu",
+		.ctl_reg = CM_PERIACTL,
+		.requires_pm_debug = true),
 	[BCM2835_CLOCK_PERI_IMAGE] = REGISTER_GATE(
 		.name = "peri_image",
 		.parent = "vpu",
-		.ctl_reg = CM_PERIICTL),
+		.ctl_reg = CM_PERIICTL,
+		.requires_pm_debug = true),
+	[BCM2835_CLOCK_SYS] = REGISTER_GATE(
+		.name = "sys",
+		.parent = "vpu",
+		.ctl_reg = CM_SYSCTL,
+		.requires_pm_debug = true),
+
 };
 
 static int bcm2835_clk_probe(struct platform_device *pdev)
