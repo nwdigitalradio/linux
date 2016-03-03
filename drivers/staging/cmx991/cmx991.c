@@ -635,6 +635,78 @@ static ssize_t calibrate_show(struct device *dev, struct device_attribute *attr,
 }
 DEVICE_ATTR_RWGRP(calibrate);
 
+static ssize_t tx_if_bandwidth_store(struct device *dev, struct device_attribute *attr,
+                                     const char *buf, size_t count)
+{
+	struct cmx991_state *st = dev_get_drvdata(dev);
+	u8 val;
+	int ret;
+	int writeval;
+	
+	if(kstrtou8(buf, 0, &val)) {
+		dev_err(dev, "Invalid TX IF Bandwidth");
+		return -EFAULT;
+	}
+	
+	switch(val) {
+		case 45:
+			writeval = 0;
+			break;
+		case 60:
+			writeval = 1;
+			break;
+		case 90:
+			writeval = 2;
+			break;
+		case 120:
+			writeval = 3;
+			break;
+		default:
+			dev_err(dev, "Invalid TX IF Bandwidth");
+			return -EFAULT;
+			break;
+	}
+	
+	ret = regmap_field_write(st->general_fields[F_TX_IF_BW], writeval);
+	if(ret) {
+		dev_err(dev, "Couldn't write F_TX_IF_BW\n");
+		return ret;
+	}
+	
+	return count;
+}
+
+static ssize_t tx_if_bandwidth_show(struct device *dev, struct device_attribute *attr,
+                                    char *buf)
+{
+	struct cmx991_state *st = dev_get_drvdata(dev);
+	unsigned int readval;
+	u8 val;
+	
+	regmap_field_read(st->general_fields[F_TX_IF_BW], &readval);
+	switch(readval) {
+		case 0:
+			val = 45;
+			break;
+		case 1:
+			val = 60;
+			break;
+		case 2:
+			val = 90;
+			break;
+		case 3:
+			val = 120;
+			break;
+		default:
+			dev_err(dev, "Got weird value %d in F_TX_IF_BW register", readval);
+			return -EFAULT;
+	}
+	
+	return scnprintf(buf, PAGE_SIZE, "%d", val);	
+}
+
+DEVICE_ATTR_RWGRP(tx_if_bandwidth);
+
 static struct attribute *control_attrs[] = {
 	&dev_attr_power.attr,
 	&dev_attr_tx_power.attr,
@@ -647,6 +719,7 @@ static struct attribute *control_attrs[] = {
 	&dev_attr_iqbandwidth.attr,
 	&dev_attr_calibrate.attr,
 	&dev_attr_tx_gain.attr,
+	&dev_attr_tx_if_bandwidth.attr,
 	NULL
 };
 
@@ -720,7 +793,7 @@ static int cmx991_probe(struct spi_device *spi) {
 	
 	//  TX Parameters
 	//  XXX These should be in defaults
-	regmap_field_write(st->general_fields[F_TX_IF_BW], 3);
+	regmap_field_write(st->general_fields[F_TX_IF_BW], 0);
 	regmap_field_write(st->general_fields[F_TX_HILO], 1);
 	regmap_field_write(st->general_fields[F_TX_RFDIV], 0);
 	regmap_field_write(st->general_fields[F_TX_IFDIV], 0);
