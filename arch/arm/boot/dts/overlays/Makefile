@@ -72,6 +72,7 @@ dtb-$(RPI_DT_OVERLAYS) += w1-gpio-overlay.dtb
 dtb-$(RPI_DT_OVERLAYS) += w1-gpio-pullup-overlay.dtb
 dtb-$(RPI_DT_OVERLAYS) += udrc-overlay.dtb
 dtb-$(RPI_DT_OVERLAYS) += udrx-overlay.dtb
+dtb-$(RPI_DT_OVERLAYS) += pitft35r-overlay.dtb
 
 targets += dtbs dtbs_install
 targets += $(dtb-y)
