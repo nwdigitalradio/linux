@@ -237,6 +237,12 @@ static int __release_resource(struct resource *old)
 {
 	struct resource *tmp, **p;
 
+	if (!old->parent) {
+		WARN(old->sibling, "sibling but no parent");
+		if (old->sibling)
+			return -EINVAL;
+		return 0;
+	}
 	p = &old->parent->child;
 	for (;;) {
 		tmp = *p;
@@ -1083,9 +1089,10 @@ struct resource * __request_region(struct resource *parent,
 		if (!conflict)
 			break;
 		if (conflict != parent) {
-			parent = conflict;
-			if (!(conflict->flags & IORESOURCE_BUSY))
+			if (!(conflict->flags & IORESOURCE_BUSY)) {
+				parent = conflict;
 				continue;
+			}
 		}
 		if (conflict->flags & flags & IORESOURCE_MUXED) {
 			add_wait_queue(&muxed_resource_wait, &wait);

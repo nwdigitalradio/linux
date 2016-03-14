@@ -138,6 +138,7 @@ struct fixup_entry {
 	struct node *node;
 	struct property *prop;
 	struct fixup_entry *next;
+	bool local_fixup_generated;
 };
 
 struct fixup {
@@ -179,11 +180,12 @@ struct node {
 
 	struct label *labels;
 
-	int is_root;
-	int is_plugin;
-	struct fixup *fixups;
 	struct symbol *symbols;
 	struct fixup_entry *local_fixups;
+	bool emit_local_fixup_node;
+
+	bool is_plugin;
+	struct fixup *fixups;
 };
 
 #define for_each_label_withdel(l0, l) \

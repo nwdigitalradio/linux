@@ -53,7 +53,7 @@ extern bool treesource_error;
 	struct node *nodelist;
 	struct reserve_info *re;
 	uint64_t integer;
-	int is_plugin;
+	bool is_plugin;
 }
 
 %token DT_V1
@@ -108,7 +108,6 @@ sourcefile:
 	  DT_V1 ';' plugindecl memreserves devicetree
 		{
 			$5->is_plugin = $3;
-			$5->is_root = 1;
 			the_boot_info = build_boot_info($4, $5,
 							guess_boot_cpuid($5));
 		}
@@ -117,11 +116,11 @@ sourcefile:
 plugindecl:
 	/* empty */
 		{
-			$$ = 0;
+			$$ = false;
 		}
 	| DT_PLUGIN ';'
 		{
-			$$ = 1;
+			$$ = true;
 		}
 	;
 

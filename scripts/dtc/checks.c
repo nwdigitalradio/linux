@@ -462,28 +462,18 @@ static void fixup_phandle_references(struct check *c, struct node *dt,
 	struct fixup_entry *fe, **fep;
 	struct node *refnode;
 	cell_t phandle;
-	int has_phandle_refs;
-
-	has_phandle_refs = 0;
-	for_each_marker_of_type(m, REF_PHANDLE) {
-		has_phandle_refs = 1;
-		break;
-	}
-
-	if (!has_phandle_refs)
-		return;
 
 	for_each_marker_of_type(m, REF_PHANDLE) {
 		assert(m->offset + sizeof(cell_t) <= prop->val.len);
 
 		refnode = get_node_by_ref(dt, m->ref);
-		if (!refnode && !symbol_fixup_support) {
-			FAIL(c, "Reference to non-existent node or label \"%s\"\n",
-				m->ref);
-			continue;
-		}
+		if (! refnode) {
+			if (!dt->is_plugin) {
+				FAIL(c, "Reference to non-existent node or label \"%s\"\n",
+					m->ref);
+				continue;
+			}
 
-		if (!refnode) {
 			/* allocate fixup entry */
 			fe = xmalloc(sizeof(*fe));
 
@@ -518,31 +508,31 @@ static void fixup_phandle_references(struct check *c, struct node *dt,
 			*fep = fe;
 
 			/* mark the entry as unresolved */
-			phandle = 0xdeadbeef;
-		} else {
-			phandle = get_node_phandle(dt, refnode);
-
-			/* if it's a plugin, we need to record it */
-			if (symbol_fixup_support && dt->is_plugin) {
-
-				/* allocate a new local fixup entry */
-				fe = xmalloc(sizeof(*fe));
-
-				fe->node = node;
-				fe->prop = prop;
-				fe->offset = m->offset;
-				fe->next = NULL;
-
-				/* append it to the local fixups */
-				fep = &dt->local_fixups;
-				while (*fep)
-					fep = &(*fep)->next;
-				*fep = fe;
-			}
+			*((cell_t *)(prop->val.val + m->offset)) =
+				cpu_to_fdt32(0xdeadbeef);
+			continue;
 		}
 
-		*((cell_t *)(prop->val.val + m->offset)) =
-			cpu_to_fdt32(phandle);
+		/* if it's a local reference, we need to record it */
+		if (symbol_fixup_support) {
+
+			/* allocate a new local fixup entry */
+			fe = xmalloc(sizeof(*fe));
+
+			fe->node = node;
+			fe->prop = prop;
+			fe->offset = m->offset;
+			fe->next = NULL;
+
+			/* append it to the local fixups */
+			fep = &dt->local_fixups;
+			while (*fep)
+				fep = &(*fep)->next;
+			*fep = fe;
+		}
+
+		phandle = get_node_phandle(dt, refnode);
+		*((cell_t *)(prop->val.val + m->offset)) = cpu_to_fdt32(phandle);
 	}
 }
 ERROR(phandle_references, NULL, NULL, fixup_phandle_references, NULL,
