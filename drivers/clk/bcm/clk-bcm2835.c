@@ -92,8 +92,19 @@
 #define CM_PCMDIV		0x09c
 #define CM_PWMCTL		0x0a0
 #define CM_PWMDIV		0x0a4
+#define CM_SLIMCTL		0x0a8
+#define CM_SLIMDIV		0x0ac
 #define CM_SMICTL		0x0b0
 #define CM_SMIDIV		0x0b4
+/* no definition for 0x0b8  and 0x0bc */
+#define CM_TCNTCTL		0x0c0
+#define CM_TCNTDIV		0x0c4
+#define CM_TECCTL		0x0c8
+#define CM_TECDIV		0x0cc
+#define CM_TD0CTL		0x0d0
+#define CM_TD0DIV		0x0d4
+#define CM_TD1CTL		0x0d8
+#define CM_TD1DIV		0x0dc
 #define CM_TSENSCTL		0x0e0
 #define CM_TSENSDIV		0x0e4
 #define CM_TIMERCTL		0x0e8
@@ -313,21 +324,18 @@ void __init bcm2835_init_clocks(void)
 	struct clk *clk;
 	int ret;
 
-	clk = clk_register_fixed_rate(NULL, "apb_pclk", NULL, CLK_IS_ROOT,
-					126000000);
+	clk = clk_register_fixed_rate(NULL, "apb_pclk", NULL, 0, 126000000);
 	if (IS_ERR(clk))
 		pr_err("apb_pclk not registered\n");
 
-	clk = clk_register_fixed_rate(NULL, "uart0_pclk", NULL, CLK_IS_ROOT,
-					3000000);
+	clk = clk_register_fixed_rate(NULL, "uart0_pclk", NULL, 0, 3000000);
 	if (IS_ERR(clk))
 		pr_err("uart0_pclk not registered\n");
 	ret = clk_register_clkdev(clk, NULL, "20201000.uart");
 	if (ret)
 		pr_err("uart0_pclk alias not registered\n");
 
-	clk = clk_register_fixed_rate(NULL, "uart1_pclk", NULL, CLK_IS_ROOT,
-					125000000);
+	clk = clk_register_fixed_rate(NULL, "uart1_pclk", NULL, 0, 125000000);
 	if (IS_ERR(clk))
 		pr_err("uart1_pclk not registered\n");
 	ret = clk_register_clkdev(clk, NULL, "20215000.uart");
@@ -819,47 +827,6 @@ static const struct bcm2835_clock_data bcm2835_clock_pwm_data = {
 	.frac_bits = 12,
 };
 
-static const struct bcm2835_clock_data bcm2835_clock_pcm_data = {
-	.name = "pcm",
-	.num_mux_parents = ARRAY_SIZE(bcm2835_clock_per_parents),
-	.parents = bcm2835_clock_per_parents,
-	.ctl_reg = CM_PCMCTL,
-	.div_reg = CM_PCMDIV,
-	.int_bits = 12,
-	.frac_bits = 12,
-};
-
-static const struct bcm2835_clock_data bcm2835_clock_gp0_data = {
-	.name = "gp0",
-	.num_mux_parents = ARRAY_SIZE(bcm2835_clock_per_parents),
-	.parents = bcm2835_clock_per_parents,
-	.ctl_reg = CM_GP0CTL,
-	.div_reg = CM_GP0DIV,
-	.int_bits = 12,
-	.frac_bits = 12,
-};
-
-static const struct bcm2835_clock_data bcm2835_clock_gp1_data = {
-	.name = "gp1",
-	.num_mux_parents = ARRAY_SIZE(bcm2835_clock_per_parents),
-	.parents = bcm2835_clock_per_parents,
-	.ctl_reg = CM_GP1CTL,
-	.div_reg = CM_GP1DIV,
-	.int_bits = 12,
-	.frac_bits = 12,
-};
-
-static const struct bcm2835_clock_data bcm2835_clock_gp2_data = {
-	.name = "gp2",
-	.num_mux_parents = ARRAY_SIZE(bcm2835_clock_per_parents),
-	.parents = bcm2835_clock_per_parents,
-	.ctl_reg = CM_GP2CTL,
-	.div_reg = CM_GP2DIV,
-	.int_bits = 12,
-	.frac_bits = 12,
-};
-
-
 struct bcm2835_pll {
 	struct clk_hw hw;
 	struct bcm2835_cprman *cprman;
@@ -1103,16 +1070,7 @@ static long bcm2835_pll_divider_round_rate(struct clk_hw *hw,
 static unsigned long bcm2835_pll_divider_get_rate(struct clk_hw *hw,
 						  unsigned long parent_rate)
 {
-	struct bcm2835_pll_divider *divider = bcm2835_pll_divider_from_hw(hw);
-	struct bcm2835_cprman *cprman = divider->cprman;
-	const struct bcm2835_pll_divider_data *data = divider->data;
-	u32 div = cprman_read(cprman, data->a2w_reg);
-
-	div &= (1 << A2W_PLL_DIV_BITS) - 1;
-	if (div == 0)
-		div = 256;
-
-	return parent_rate / div;
+	return clk_divider_ops.recalc_rate(hw, parent_rate);
 }
 
 static void bcm2835_pll_divider_off(struct clk_hw *hw)
@@ -1150,13 +1108,15 @@ static int bcm2835_pll_divider_set_rate(struct clk_hw *hw,
 	struct bcm2835_pll_divider *divider = bcm2835_pll_divider_from_hw(hw);
 	struct bcm2835_cprman *cprman = divider->cprman;
 	const struct bcm2835_pll_divider_data *data = divider->data;
-	u32 cm;
-	int ret;
+	u32 cm, div, max_div = 1 << A2W_PLL_DIV_BITS;
 
-	ret = clk_divider_ops.set_rate(hw, rate, parent_rate);
-	if (ret)
-		return ret;
+	div = DIV_ROUND_UP_ULL(parent_rate, rate);
 
+	div = min(div, max_div);
+	if (div == max_div)
+		div = 0;
+
+	cprman_write(cprman, data->a2w_reg, div);
 	cm = cprman_read(cprman, data->cm_reg);
 	cprman_write(cprman, data->cm_reg, cm | data->load_mask);
 	cprman_write(cprman, data->cm_reg, cm & ~data->load_mask);
@@ -1471,7 +1431,7 @@ bcm2835_register_pll_divider(struct bcm2835_cprman *cprman,
 	divider->div.reg = cprman->regs + data->a2w_reg;
 	divider->div.shift = A2W_PLL_DIV_SHIFT;
 	divider->div.width = A2W_PLL_DIV_BITS;
-	divider->div.flags = 0;
+	divider->div.flags = CLK_DIVIDER_MAX_AT_ZERO;
 	divider->div.lock = &cprman->regs_lock;
 	divider->div.hw.init = &init;
 	divider->div.table = NULL;
@@ -1639,16 +1599,6 @@ static int bcm2835_clk_probe(struct platform_device *pdev)
 
 	clks[BCM2835_CLOCK_PWM] =
 		bcm2835_register_clock(cprman, &bcm2835_clock_pwm_data);
-	clks[BCM2835_CLOCK_PCM] =
-		bcm2835_register_clock(cprman, &bcm2835_clock_pcm_data);
-		
-	clks[BCM2835_CLOCK_GP0] =
-		bcm2835_register_clock(cprman, &bcm2835_clock_gp0_data);
-	clks[BCM2835_CLOCK_GP1] =
-		bcm2835_register_clock(cprman, &bcm2835_clock_gp1_data);
-	clks[BCM2835_CLOCK_GP2] =
-		bcm2835_register_clock(cprman, &bcm2835_clock_gp2_data);
-
 
 	return of_clk_add_provider(dev->of_node, of_clk_src_onecell_get,
 				   &cprman->onecell);
@@ -1668,20 +1618,7 @@ static struct platform_driver bcm2835_clk_driver = {
 	.probe          = bcm2835_clk_probe,
 };
 
-static int __init bcm2835_clk_init(void)
-{
-        return platform_driver_register(&bcm2835_clk_driver);
-}
-subsys_initcall(bcm2835_clk_init);
-
-static void __exit bcm2835_clk_cleanup(void)
-{
-        platform_driver_unregister(&bcm2835_clk_driver);
-}
-module_exit(bcm2835_clk_cleanup);
-
-
-// builtin_platform_driver(bcm2835_clk_driver);
+builtin_platform_driver(bcm2835_clk_driver);
 
 MODULE_AUTHOR("Eric Anholt <eric@anholt.net>");
 MODULE_DESCRIPTION("BCM2835 clock driver");
