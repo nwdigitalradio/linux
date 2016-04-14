@@ -53,7 +53,9 @@
                 assigned-clocks = <&cprman BCM2835_CLOCK_GP0>;
                 assigned-clock-rates = <25000000>;
                 pinctrl-names = "default";
-                pinctrl-0 = <&gpclk0_pin>;
+                pinctrl-0 = <&gpclk0_pin &aic3204_reset>;
+                
+                reset_gpios = <&aic3204_reset>;
 
                 iov-supply = <&udrc0_ldoin>;
                 ldoin-supply = <&udrc0_ldoin>;
@@ -85,6 +87,17 @@
             	brcm,pins = <4>;
             	brcm,function = <4>;
             };
+            
+            aic3204_reset: aic3204_reset {
+            	brcm,pins = <13>;
+            	brcm,function = <1>;
+            	brcm,pull = <1>;
+            };
+            
+            aic3204_gpio: aic3204_gpio {
+            	brcm,pins = <26>;
+            };
+            
         };
     };
 
