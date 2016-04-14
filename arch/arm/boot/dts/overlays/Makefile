@@ -15,6 +15,9 @@ endif
 dtbo-$(RPI_DT_OVERLAYS) += ads7846.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += at86rf233.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += bmp085_i2c-sensor.dtbo
+dtbo-$(RPI_DT_OVERLAYS) += boomberry-dac.dtbo
+dtbo-$(RPI_DT_OVERLAYS) += boomberry-digi.dtbo
+dtbo-$(RPI_DT_OVERLAYS) += dpi24.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += dwc2.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += dwc-otg.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += dht11.dtbo
@@ -30,6 +33,7 @@ dtbo-$(RPI_DT_OVERLAYS) += hy28b.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += i2c-rtc.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += i2c-gpio.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += i2c-mux-pca9548a.dtbo
+dtbo-$(RPI_DT_OVERLAYS) += i2c-pwm-pca9685a.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += i2c0-bcm2708.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += i2c1-bcm2708.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += i2s-mmap.dtbo
