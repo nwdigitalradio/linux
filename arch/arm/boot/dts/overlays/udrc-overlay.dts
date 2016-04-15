@@ -42,6 +42,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             status = "okay";
+            clocks = <&cprman BCM2835_CLOCK_VPU>;
+            clock-frequency = <400000>;
 
             tlv320aic32x4: tlv320aic32x4@18 {
                 compatible = "ti,tlv320aic32x4";
@@ -52,6 +54,7 @@
                 clock-names = "mclk";
                 assigned-clocks = <&cprman BCM2835_CLOCK_GP0>;
                 assigned-clock-rates = <25000000>;
+                
                 pinctrl-names = "default";
                 pinctrl-0 = <&gpclk0_pin &aic3204_reset>;
                 
