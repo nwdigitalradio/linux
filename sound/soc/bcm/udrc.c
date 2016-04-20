@@ -54,11 +54,26 @@ static struct snd_soc_dai_link snd_rpi_udrc_dai[] = {
 },
 };
 
+static const struct snd_soc_dapm_widget udr_dapm_widgets[] = {
+	SND_SOC_DAPM_LINE("Line In", NULL),
+};
+
+static const struct snd_soc_dapm_route udr_dapm_routes[] = {
+	{"IN1_R", NULL, "Line In"},
+	{"IN1_L", NULL, "Line In"},
+	{"CM", NULL, "Line In"},
+};
+
 static struct snd_soc_card snd_rpi_udrc = {
-    .name = "snd_rpi_udrc",
+    .name = "udrc",
     .owner = THIS_MODULE,
     .dai_link = snd_rpi_udrc_dai,
     .num_links = ARRAY_SIZE(snd_rpi_udrc_dai),
+    .dapm_widgets = udr_dapm_widgets,
+    .num_dapm_widgets = ARRAY_SIZE(udr_dapm_widgets),
+    .dapm_routes = udr_dapm_routes,
+    .num_dapm_routes = ARRAY_SIZE(udr_dapm_routes),
+    .fully_routed = true,
 };
 
 static int snd_rpi_udrc_probe(struct platform_device *pdev) {
