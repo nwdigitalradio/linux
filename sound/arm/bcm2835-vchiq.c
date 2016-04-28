@@ -596,14 +596,28 @@ int bcm2835_audio_set_params(bcm2835_alsa_stream_t * alsa_stream,
 	instance->result = -1;
 
 	if (alsa_stream->chip->cea_chmap >= 0) {
+		LOG_INFO("Using application requested channel map: %d\n",
+			 alsa_stream->chip->cea_chmap);
 		chmap_value = (unsigned)alsa_stream->chip->cea_chmap << 24;
 	} else {
-		chmap_value = 0; /* force stereo */
+		LOG_INFO("Using fallback channel map.\n");
+		/* fallback layouts for applications which do not use chmap API */
+		chmap_value = 0x00;
+		switch (channels) {
+		case 3: chmap_value = 0x01; break;
+		case 4: chmap_value = 0x03; break;
+		case 5: chmap_value = 0x07; break;
+		case 6: chmap_value = 0x0b; break;
+		case 7: chmap_value = 0x0f; break;
+		case 8: chmap_value = 0x13; break;
+		}
 		for (i = 0; i < 8; i++)
 			alsa_stream->chip->map_channels[i] = i;
 	}
 	for (i = 0; i < 8; i++)
 		chmap_value |= alsa_stream->chip->map_channels[i] << (i * 3);
+
+	LOG_INFO("Requesting AUDS channel map: 0x%lx\n", (long)chmap_value);
 
 	m.type = VC_AUDIO_MSG_TYPE_CONFIG;
 	m.u.config.channels = channels;
