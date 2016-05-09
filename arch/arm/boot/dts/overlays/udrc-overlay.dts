@@ -58,17 +58,17 @@
                 pinctrl-names = "default";
                 pinctrl-0 = <&gpclk0_pin &aic3204_reset>;
                 
-                reset_gpios = <&aic3204_reset>;
+                reset-gpios = <&gpio 13 0>;
 
                 iov-supply = <&udrc0_ldoin>;
                 ldoin-supply = <&udrc0_ldoin>;
 
-				ti,hp-ldoin-powered;
-				ti,lo-ldoin-powered;
+		ti,hp-ldoin-powered;
+		ti,lo-ldoin-powered;
 
-				ti,avdd-weak-disable;
-				
-				ti,common-mode-microvolt = <1650000>;
+		ti,avdd-weak-disable;
+		
+		ti,common-mode-microvolt = <1650000>;
             };
         };
     };
