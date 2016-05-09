@@ -161,6 +161,13 @@ Params:
         and the other i2c baudrate parameters.
 
 
+Name:   adau1977-adc
+Info:   Overlay for activation of ADAU1977 ADC codec over I2C for control
+        and I2S for data.
+Load:   dtoverlay=adau1977-adc
+Params: <None>
+
+
 Name:   ads7846
 Info:   ADS7846 Touch controller
 Load:   dtoverlay=ads7846,<param>=<val>
@@ -449,10 +456,15 @@ Params: ds1307                  Select the DS1307 device
 
 
 Name:   i2c0-bcm2708
-Info:   Enable the i2c_bcm2708 driver for the i2c0 bus
+Info:   Enable the i2c_bcm2708 driver for the i2c0 bus. Not all pin combinations
+        are usable on all platforms.
 Load:   dtoverlay=i2c0-bcm2708,<param>=<val>
-Params: sda0_pin                GPIO pin for SDA0 (0, 28 [or 44] - default 0)
-        scl0_pin                GPIO pin for SCL0 (1, 29 [or 45] - default 1)
+Params: sda0_pin                GPIO pin for SDA0 (deprecated - use pins_*)
+        scl0_pin                GPIO pin for SCL0 (deprecated - use pins_*)
+        pins_0_1                Use pins 0 and 1 (default)
+        pins_28_29              Use pins 28 and 29
+        pins_44_45              Use pins 44 and 45
+        pins_46_47              Use pins 46 and 47
 
 
 Name:   i2c1-bcm2708
@@ -478,8 +490,21 @@ Params: <None>
 
 Name:   iqaudio-dac
 Info:   Configures the IQaudio DAC audio card
-Load:   dtoverlay=iqaudio-dac
-Params: <None>
+Load:   dtoverlay=iqaudio-dac,<param>
+Params: 24db_digital_gain       Allow gain to be applied via the PCM512x codec
+                                Digital volume control. Enable with
+                                "dtoverlay=iqaudio-dac,24db_digital_gain"
+                                (The default behaviour is that the Digital
+                                volume control is limited to a maximum of
+                                0dB. ie. it can attenuate but not provide
+                                gain. For most users, this will be desired
+                                as it will prevent clipping. By appending
+                                the 24db_digital_gain parameter, the Digital
+                                volume control will allow up to 24dB of
+                                gain. If this parameter is enabled, it is the
+                                responsibility of the user to ensure that
+                                the Digital volume control is set to a value
+                                that does not result in clipping/distortion!)
 
 
 Name:   iqaudio-dacplus
