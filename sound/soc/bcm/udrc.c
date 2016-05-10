@@ -61,7 +61,8 @@ static const struct snd_soc_dapm_widget udr_dapm_widgets[] = {
 static const struct snd_soc_dapm_route udr_dapm_routes[] = {
 	{"IN1_R", NULL, "Line In"},
 	{"IN1_L", NULL, "Line In"},
-	{"CM", NULL, "Line In"},
+	{"CM_L", NULL, "Line In"},
+	{"CM_R", NULL, "Line In"},
 };
 
 static struct snd_soc_card snd_rpi_udrc = {
@@ -84,7 +85,7 @@ static int snd_rpi_udrc_probe(struct platform_device *pdev) {
         struct device_node *i2s_node;
         struct device_node *codec_node;
         struct snd_soc_dai_link *dai = &snd_rpi_udrc_dai[0];
-        
+
         i2s_node = of_parse_phandle(pdev->dev.of_node, "i2s-controller", 0);
 		if(i2s_node) {
             dai->cpu_dai_name = NULL;
@@ -92,18 +93,18 @@ static int snd_rpi_udrc_probe(struct platform_device *pdev) {
             dai->platform_name = NULL;
             dai->platform_of_node = i2s_node;
         }
-        
+
         codec_node = of_parse_phandle(pdev->dev.of_node, "codec-device", 0);
         if(codec_node) {
         	dai->codec_name = NULL;
         	dai->codec_of_node = codec_node;
-        }        
+        }
     }
-            
+
     ret = snd_soc_register_card(&snd_rpi_udrc);
     if(ret)
         dev_err(&pdev->dev, "snd_soc_register_card() failed: %d\n", ret);
-    
+
     return ret;
 }
 

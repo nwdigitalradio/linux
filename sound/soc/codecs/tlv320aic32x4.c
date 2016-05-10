@@ -262,8 +262,8 @@ static const struct snd_soc_dapm_widget aic32x4_dapm_widgets[] = {
 	SND_SOC_DAPM_INPUT("IN2_R"),
 	SND_SOC_DAPM_INPUT("IN3_L"),
 	SND_SOC_DAPM_INPUT("IN3_R"),
-	SND_SOC_DAPM_INPUT("CM1_L"),
-	SND_SOC_DAPM_INPUT("CM1_R"),
+	SND_SOC_DAPM_INPUT("CM_L"),
+	SND_SOC_DAPM_INPUT("CM_R"),
 };
 
 static const struct snd_soc_dapm_route aic32x4_dapm_routes[] = {
@@ -296,7 +296,7 @@ static const struct snd_soc_dapm_route aic32x4_dapm_routes[] = {
 	{"Left Input Mixer", "IN2_L P Switch", "IN2_L"},
 	{"Left Input Mixer", "IN3_L P Switch", "IN3_L"},
 	{"Left Input Mixer", "IN1_R P Switch", "IN1_R"},
-	{"Left Input Mixer", "CM1_L N Switch", "CM1_L"},
+	{"Left Input Mixer", "CM_L N Switch", "CM_L"},
 	{"Left Input Mixer", "IN2_R N Switch", "IN2_R"},
 	{"Left Input Mixer", "IN3_R N Switch", "IN3_R"},
 
@@ -307,7 +307,7 @@ static const struct snd_soc_dapm_route aic32x4_dapm_routes[] = {
 	{"Right Input Mixer", "IN2_R P Switch", "IN2_R"},
 	{"Right Input Mixer", "IN3_R P Switch", "IN3_R"},
 	{"Right Input Mixer", "IN2_L P Switch", "IN2_L"},
-	{"Right Input Mixer", "CM1_R N Switch", "CM1_R"},
+	{"Right Input Mixer", "CM_R N Switch", "CM_R"},
 	{"Right Input Mixer", "IN1_L N Switch", "IN1_L"},
 	{"Right Input Mixer", "IN3_L N Switch", "IN3_L"},
 
