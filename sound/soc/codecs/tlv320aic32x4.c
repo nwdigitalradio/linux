@@ -201,7 +201,7 @@ static const struct snd_kcontrol_new left_input_mixer_controls[] = {
 	SOC_DAPM_ENUM("IN2_L P Switch", in2l_lpga_p_enum),
 	SOC_DAPM_ENUM("IN3_L P Switch", in3l_lpga_p_enum),
 	SOC_DAPM_ENUM("IN1_R P Switch", in1r_lpga_p_enum),
-	SOC_DAPM_SINGLE("CM1_L N Switch", AIC32X4_LMICPGANIN, 6, 1, 0),
+	SOC_DAPM_SINGLE("CM_L N Switch", AIC32X4_LMICPGANIN, 6, 1, 0),
 	SOC_DAPM_SINGLE("IN2_R N Switch", AIC32X4_LMICPGANIN, 4, 1, 0),
 	SOC_DAPM_SINGLE("IN3_R N Switch", AIC32X4_LMICPGANIN, 2, 1, 0),
 };
@@ -216,7 +216,7 @@ static const struct snd_kcontrol_new right_input_mixer_controls[] = {
 	SOC_DAPM_ENUM("IN2_R P Switch", in2r_rpga_p_enum),
 	SOC_DAPM_ENUM("IN3_R P Switch", in3r_rpga_p_enum),
 	SOC_DAPM_ENUM("IN2_L P Switch", in2l_rpga_p_enum),
-	SOC_DAPM_SINGLE("CM1_R N Switch", AIC32X4_RMICPGANIN, 6, 1, 0),
+	SOC_DAPM_SINGLE("CM_R N Switch", AIC32X4_RMICPGANIN, 6, 1, 0),
 	SOC_DAPM_SINGLE("IN1_L N Switch", AIC32X4_RMICPGANIN, 4, 1, 0),
 	SOC_DAPM_SINGLE("IN3_L N Switch", AIC32X4_RMICPGANIN, 2, 1, 0),
 };
