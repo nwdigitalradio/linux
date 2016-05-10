@@ -303,7 +303,9 @@ static const struct snd_soc_dapm_route aic32x4_dapm_routes[] = {
 	{"Left ADC", NULL, "Left Input Mixer"},
 
 	/* Right Input */
-	{"Right Input Mixer", "IN1_R R+ Switch", "IN1_R"},
+	/* {"Right Input Mixer", "IN1_R R+ Switch", "IN1_R"}, */
+	{"Right Input Mixer", NULL, "IN1_R R+ Switch"},
+	{"IN1_R R+ Switch", "10 kOhm", "IN1_R"},
 	{"Right Input Mixer", "IN2_R R+ Switch", "IN2_R"},
 	{"Right Input Mixer", "IN3_R R+ Switch", "IN3_R"},
 	{"Right Input Mixer", "IN2_L R+ Switch", "IN2_L"},
