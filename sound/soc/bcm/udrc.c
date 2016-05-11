@@ -74,7 +74,7 @@ static struct snd_soc_card snd_rpi_udrc = {
     .num_dapm_widgets = ARRAY_SIZE(udr_dapm_widgets),
     .dapm_routes = udr_dapm_routes,
     .num_dapm_routes = ARRAY_SIZE(udr_dapm_routes),
-//    .fully_routed = true,
+    .fully_routed = true,
 };
 
 static int snd_rpi_udrc_probe(struct platform_device *pdev) {
