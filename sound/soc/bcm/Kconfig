@@ -82,7 +82,8 @@ config SND_BCM2708_SOC_RASPIDAC3
 config SND_BCM2708_SOC_UDRC
         tristate "Support for Universal Digital Radio Controller"
         depends on SND_BCM2708_SOC_I2S || SND_BCM2835_SOC_I2S
-        select SND_SOC_TLV320AIC32X4
+        select SND_SOC_TLV320AIC32X4_I2C
+        select SND_SOC_TLV320AIC32X4_SPI
         help
          Say Y or M if you want to add support for Universal Digital Radio Controller.
 
