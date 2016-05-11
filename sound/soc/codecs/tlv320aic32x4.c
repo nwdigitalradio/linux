@@ -675,8 +675,8 @@ static int aic32x4_probe(struct snd_soc_codec *codec)
 	/* Power platform configuration */
 	if (aic32x4->power_cfg & AIC32X4_PWR_MICBIAS_2075_LDOIN)
 		snd_soc_update_bits(codec, AIC32X4_MICBIAS,
-				AIC32X4_MICBIAS_LDOIN | AIC32X4_MICBIAS_2075V,
-				AIC32X4_MICBIAS_LDOIN | AIC32X4_MICBIAS_2075V);
+				    AIC32X4_MICBIAS_LDOIN | AIC32X4_MICBIAS_2075V,
+				    AIC32X4_MICBIAS_LDOIN | AIC32X4_MICBIAS_2075V);
 
 	if (aic32x4->power_cfg & AIC32X4_PWR_AVDD_DVDD_WEAK_DISABLE)
 		snd_soc_write(codec, AIC32X4_PWRCFG, AIC32X4_AVDDWEAKDISABLE);
@@ -684,10 +684,12 @@ static int aic32x4_probe(struct snd_soc_codec *codec)
 	if (aic32x4->power_cfg & AIC32X4_PWR_AIC32X4_LDO_ENABLE)
 		snd_soc_update_bits(codec, AIC32X4_LDOCTL, AIC32X4_LDOCTLEN,
 				AIC32X4_LDOCTLEN);
+	snd_soc_update_bits(codec, AIC32X4_LDOCTL, AIC32X4_ANALOG_BLOCKS_EN, 0);
 
 	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_LDOIN_RANGE_18_36)
 		snd_soc_update_bits(codec, AIC32X4_CMMODE, AIC32X4_LDOIN_18_36,
 				AIC32X4_LDOIN_18_36);
+	tmp_reg = snd_soc_read(codec, AIC32X4_CMMODE);
 	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED)
 		tmp_reg |= AIC32X4_LDOIN2HP;
 	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_125V)
