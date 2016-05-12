@@ -554,7 +554,6 @@ static int aic32x4_hw_params(struct snd_pcm_substream *substream,
 	long int mclk_rate;
 
 	mclk_rate = aic32x4_get_mclk_rate(codec);
-	dev_info(codec->dev, "Setting DAI system clock to %ld", mclk_rate);
 
 	i = aic32x4_get_divs(mclk_rate, params_rate(params));
 	if (i < 0) {
@@ -660,8 +659,6 @@ static int aic32x4_set_bias_level(struct snd_soc_codec *codec,
 {
 	struct aic32x4_priv *aic32x4 = snd_soc_codec_get_drvdata(codec);
 	int ret;
-
-	dev_info(codec->dev, "Bias from %d to %d", aic32x4->bias_level, level);
 
 	if(aic32x4->bias_level == level)
 		return 0;
