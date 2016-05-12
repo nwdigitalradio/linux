@@ -56,6 +56,7 @@ static struct snd_soc_dai_link snd_rpi_udrc_dai[] = {
 
 static const struct snd_soc_dapm_widget udr_dapm_widgets[] = {
 	SND_SOC_DAPM_LINE("Line In", NULL),
+	SND_SOC_DAPM_LINE("Line Out", NULL),
 };
 
 static const struct snd_soc_dapm_route udr_dapm_routes[] = {
@@ -63,6 +64,8 @@ static const struct snd_soc_dapm_route udr_dapm_routes[] = {
 	{"IN1_L", NULL, "Line In"},
 	{"CM_L", NULL, "Line In"},
 	{"CM_R", NULL, "Line In"},
+	{"Line Out", NULL, "LOR"},
+	{"Line Out", NULL, "LOL"},
 };
 
 static struct snd_soc_card snd_rpi_udrc = {
