@@ -63,11 +63,6 @@
                 iov-supply = <&udrc0_ldoin>;
                 ldoin-supply = <&udrc0_ldoin>;
 
-		ti,hp-ldoin-powered;
-		ti,lo-ldoin-powered;
-
-		ti,avdd-weak-disable;
-		
 		ti,common-mode-microvolt = <1650000>;
             };
         };
