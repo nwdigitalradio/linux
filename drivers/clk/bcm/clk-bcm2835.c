@@ -446,6 +446,8 @@ struct bcm2835_clock_data {
 	/* Number of fractional bits in the divider */
 	u32 frac_bits;
 
+	u32 flags;
+
 	bool is_vpu_clock;
 	bool is_mash_clock;
 };
@@ -1265,7 +1267,16 @@ static struct clk *bcm2835_register_clock(struct bcm2835_cprman *cprman,
 	init.parent_names = parents;
 	init.num_parents = data->num_mux_parents;
 	init.name = data->name;
-	init.flags = CLK_IGNORE_UNUSED;
+	init.flags = data->flags | CLK_IGNORE_UNUSED;
+
+	/*
+	 * Some GPIO clocks for ethernet/wifi PLLs are marked as
+	 * critical (since some platforms use them), but if the
+	 * firmware didn't have them turned on then they clearly
+	 * aren't actually critical.
+	 */
+	if ((cprman_read(cprman, data->ctl_reg) & CM_ENABLE) == 0)
+		init.flags &= ~CLK_IS_CRITICAL;
 
 	if (data->is_vpu_clock) {
 		init.ops = &bcm2835_vpu_clock_clk_ops;
@@ -1692,6 +1703,7 @@ static const struct bcm2835_clk_desc clk_desc_array[] = {
 		.div_reg = CM_VPUDIV,
 		.int_bits = 12,
 		.frac_bits = 8,
+		.flags = CLK_IS_CRITICAL,
 		.is_vpu_clock = true),
 
 	/* clocks with per parent mux */
@@ -1748,13 +1760,15 @@ static const struct bcm2835_clk_desc clk_desc_array[] = {
 		.div_reg = CM_GP1DIV,
 		.int_bits = 12,
 		.frac_bits = 12,
+		.flags = CLK_IS_CRITICAL,
 		.is_mash_clock = true),
 	[BCM2835_CLOCK_GP2]	= REGISTER_PER_CLK(
 		.name = "gp2",
 		.ctl_reg = CM_GP2CTL,
 		.div_reg = CM_GP2DIV,
 		.int_bits = 12,
-		.frac_bits = 12),
+		.frac_bits = 12,
+		.flags = CLK_IS_CRITICAL),
 
 	/* HDMI state machine */
 	[BCM2835_CLOCK_HSM]	= REGISTER_PER_CLK(

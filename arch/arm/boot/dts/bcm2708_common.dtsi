@@ -137,6 +137,7 @@
 
 		i2s: i2s@7e203000 {
 			compatible = "brcm,bcm2835-i2s";
+			#sound-dai-cells = <0>;
 			reg = <0x7e203000 0x24>,
 			      <0x7e101098 0x08>;
 
@@ -176,6 +177,17 @@
 		pixelvalve0: pixelvalve@7e206000 {
 			compatible = "brcm,bcm2835-pixelvalve0";
 			reg = <0x7e206000 0x100>;
+			status = "disabled";
+		};
+
+		dpi: dpi@7e208000 {
+			compatible = "brcm,bcm2835-dpi";
+			reg = <0x7e208000 0x8c>;
+			clocks = <&cprman BCM2835_CLOCK_VPU>,
+				 <&cprman BCM2835_CLOCK_DPI>;
+			clock-names = "core", "pixel";
+			#address-cells = <1>;
+			#size-cells = <0>;
 			status = "disabled";
 		};
 

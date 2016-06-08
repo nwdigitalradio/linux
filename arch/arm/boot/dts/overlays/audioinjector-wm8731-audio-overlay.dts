@@ -1,4 +1,4 @@
-// Definitions for BoomBerry Digi
+// Definitions for audioinjector.net audio add on soundcard
 /dts-v1/;
 /plugin/;
 
@@ -19,10 +19,10 @@
 			#size-cells = <0>;
 			status = "okay";
 
-			wm8804@3b {
+			wm8731@1a {
 				#sound-dai-cells = <0>;
-				compatible = "wlf,wm8804";
-				reg = <0x3b>;
+				compatible = "wlf,wm8731";
+				reg = <0x1a>;
 				status = "okay";
 			};
 		};
@@ -31,7 +31,7 @@
 	fragment@2 {
 		target = <&sound>;
 		__overlay__ {
-			compatible = "boomberry,boomberry-digi";
+			compatible = "ai,audioinjector-pi-soundcard";
 			i2s-controller = <&i2s>;
 			status = "okay";
 		};
