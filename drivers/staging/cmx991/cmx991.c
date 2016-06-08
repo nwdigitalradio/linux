@@ -574,7 +574,7 @@ static ssize_t iqbandwidth_store(struct device *dev, struct device_attribute *at
 		return -EFAULT;
 	}
 	
-	if(val != 1000 || val != 100) {
+	if(val != 1000 && val != 100) {
 		dev_err(dev, "Invalid IQ Bandwidth\n");
 		return -EFAULT;
 	}
