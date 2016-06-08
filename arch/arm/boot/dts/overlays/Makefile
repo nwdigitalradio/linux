@@ -83,6 +83,7 @@ dtbo-$(RPI_DT_OVERLAYS) += spi-gpio35-39.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += tinylcd35.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += uart1.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += udrc.dtbo
+dtbo-$(RPI_DT_OVERLAYS) += udrc-boost-output.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += udrx.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += vc4-kms-v3d.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += vga666.dtbo

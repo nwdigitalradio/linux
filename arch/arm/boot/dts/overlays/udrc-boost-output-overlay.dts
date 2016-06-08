@@ -1,0 +1,20 @@
+/*
+ * Device tree overlay for the Universal Digital Radio Controller
+ * to boost output from the LO output.
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+    compatible = "brcm,bcm2835", "brcm,bcm2836", "brcm,bcm2708", "brcm,bcm2709";
+    fragment@0 {
+        target = <&i2c1>;
+        __overlay__ {
+		tlv320aic32x4: tlv320aic32x4@18 {
+			ti,lo-ldoin-powered;
+			ti,avdd-weak-disable;
+		};
+        };
+    };
+};
