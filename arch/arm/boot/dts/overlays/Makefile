@@ -13,6 +13,7 @@ ifeq ($(CONFIG_ARCH_BCM2835),y)
 endif
 
 dtbo-$(RPI_DT_OVERLAYS) += adau1977-adc.dtbo
+dtbo-$(RPI_DT_OVERLAYS) += ads1015.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += ads7846.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += akkordion-iqdacplus.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += at86rf233.dtbo
@@ -77,6 +78,7 @@ dtbo-$(RPI_DT_OVERLAYS) += smi.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += smi-dev.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += smi-nand.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += spi-gpio35-39.dtbo
+dtbo-$(RPI_DT_OVERLAYS) += spi-rtc.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += spi1-1cs.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += spi1-2cs.dtbo
 dtbo-$(RPI_DT_OVERLAYS) += spi1-3cs.dtbo
