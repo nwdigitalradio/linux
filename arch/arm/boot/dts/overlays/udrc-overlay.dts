@@ -43,7 +43,7 @@
             #size-cells = <0>;
             status = "okay";
             clocks = <&cprman BCM2835_CLOCK_VPU>;
-            clock-frequency = <400000>;
+            clock-frequency = <100000>;
 
             tlv320aic32x4: tlv320aic32x4@18 {
                 compatible = "ti,tlv320aic32x4";
