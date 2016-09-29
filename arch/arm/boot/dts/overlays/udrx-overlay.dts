@@ -153,6 +153,11 @@
                 brcm,pins = <7 8 17 27>;
                 brcm,function = <1>;
             };
+
+            pwm_pins: pwm_pins {
+                brcm,pins = <13>;
+                brcm,function = <4>;
+            };
         };
     };
 
@@ -168,5 +173,13 @@
     	__overlay__ {
     		clocks = <&cprman BCM2835_CLOCK_EMMC>;
     	};
+    };
+
+    fragment@9 {
+        target = <&pwm>;
+        __overlay__ {
+            clocks = <&cprman BCM2835_CLOCK_PWM>;
+            status = "okay";
+        };
     };
 };
