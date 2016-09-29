@@ -2,6 +2,7 @@
 #include <dt-bindings/clock/bcm2835-aux.h>
 #include "dt-bindings/power/raspberrypi-power.h"
 #include "dt-bindings/gpio/gpio.h"
+#include "dt-bindings/pinctrl/bcm2835.h"
 #include "skeleton.dtsi"
 
 / {
@@ -110,9 +111,10 @@
 			reg = <0x7e101000 0x2000>;
 
 			/* CPRMAN derives everything from the platform's
-			 * oscillator.
+			 * oscillator except for a few clocks that may
+			 * derive from something else derived from CPRMAN..
 			 */
-			clocks = <&clk_osc>;
+			clocks = <&clk_osc>, <&dsi1 0>, <&dsi1 1>, <&dsi1 2>;
 			status = "disabled";
 		};
 
@@ -282,6 +284,44 @@
 			status = "disabled";
 		};
 
+		firmwarekms: firmwarekms@7e600000 {
+			compatible = "raspberrypi,rpi-firmware-kms";
+			/* SMI interrupt reg */
+			reg = <0x7e600000 0x100>;
+			interrupts = <2 16>;
+			brcm,firmware = <&firmware>;
+			status = "disabled";
+		};
+
+		smi: smi@7e600000 {
+			compatible = "brcm,bcm2835-smi";
+			reg = <0x7e600000 0x44>, <0x7e1010b0 0x8>;
+			interrupts = <2 16>;
+			brcm,smi-clock-source = <6>;
+			brcm,smi-clock-divisor = <4>;
+			dmas = <&dma 4>;
+			dma-names = "rx-tx";
+			status = "disabled";
+		};
+
+		dsi1: dsi@7e700000 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			#clock-cells = <1>;
+
+			compatible = "brcm,bcm2835-dsi1";
+			reg = <0x7e700000 0x8c>;
+			interrupts = <2 12>;
+
+			clocks = <&cprman BCM2835_PLLD_DSI1>,
+				 <&cprman BCM2835_CLOCK_DSI1E>,
+				 <&cprman BCM2835_CLOCK_DSI1P>;
+			clock-names = "phy", "escape", "pixel";
+			clock-output-names = "dsi1_byte", "dsi1_ddr2", "dsi1_ddr";
+			status = "disabled";
+			power-domains = <&power RPI_POWER_DOMAIN_DSI1>;
+		};
+
 		i2c1: i2c@7e804000 {
 			compatible = "brcm,bcm2708-i2c";
 			reg = <0x7e804000 0x1000>;
@@ -305,17 +345,6 @@
 			status = "disabled";
 		};
 
-		smi: smi@7e600000 {
-			compatible = "brcm,bcm2835-smi";
-			reg = <0x7e600000 0x44>, <0x7e1010b0 0x8>;
-			interrupts = <2 16>;
-			brcm,smi-clock-source = <6>;
-			brcm,smi-clock-divisor = <4>;
-			dmas = <&dma 4>;
-			dma-names = "rx-tx";
-			status = "disabled";
-		};
-
 		pixelvalve2: pixelvalve@7e807000 {
 			compatible = "brcm,bcm2835-pixelvalve2";
 			reg = <0x7e807000 0x100>;
@@ -327,7 +356,6 @@
 			reg = <0x7e902000 0x600>,
 			      <0x7e808000 0x100>;
 			ddc = <&i2c2>;
-			hpd-gpios = <&gpio 46 GPIO_ACTIVE_HIGH>;
 			clocks = <&cprman BCM2835_PLLH_PIX>,
 				 <&cprman BCM2835_CLOCK_HSM>;
 			clock-names = "pixel", "hdmi";
@@ -346,6 +374,7 @@
 		v3d: v3d@7ec00000 {
 			compatible = "brcm,vc4-v3d";
 			reg = <0x7ec00000 0x1000>;
+			power-domains = <&power RPI_POWER_DOMAIN_V3D>;
 			status = "disabled";
 		};
 

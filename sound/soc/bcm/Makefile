@@ -20,6 +20,7 @@ snd-soc-udrc-objs := udrc.o
 snd-soc-audioinjector-pi-soundcard-objs := audioinjector-pi-soundcard.o
 snd-soc-digidac1-soundcard-objs := digidac1-soundcard.o
 snd-soc-dionaudio-loco-objs := dionaudio_loco.o
+snd-soc-allo-piano-dac-objs := allo-piano-dac.o
 
 obj-$(CONFIG_SND_BCM2708_SOC_ADAU1977_ADC) += snd-soc-adau1977-adc.o
 obj-$(CONFIG_SND_BCM2708_SOC_HIFIBERRY_DAC) += snd-soc-hifiberry-dac.o
@@ -37,3 +38,4 @@ obj-$(CONFIG_SND_BCM2708_SOC_UDRC) += snd-soc-udrc.o
 obj-$(CONFIG_SND_AUDIOINJECTOR_PI_SOUNDCARD) += snd-soc-audioinjector-pi-soundcard.o
 obj-$(CONFIG_SND_DIGIDAC1_SOUNDCARD) += snd-soc-digidac1-soundcard.o
 obj-$(CONFIG_SND_BCM2708_SOC_DIONAUDIO_LOCO) += snd-soc-dionaudio-loco.o
+obj-$(CONFIG_SND_BCM2708_SOC_ALLO_PIANO_DAC) += snd-soc-allo-piano-dac.o

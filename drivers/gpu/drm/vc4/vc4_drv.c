@@ -9,12 +9,13 @@
 
 #include <linux/clk.h>
 #include <linux/component.h>
+#include <linux/debugfs.h>
 #include <linux/device.h>
 #include <linux/io.h>
 #include <linux/module.h>
 #include <linux/of_platform.h>
 #include <linux/platform_device.h>
-#include <soc/bcm2835/raspberrypi-firmware.h>
+#include <linux/pm_runtime.h>
 #include "drm_fb_cma_helper.h"
 
 #include "uapi/drm/vc4_drm.h"
@@ -46,10 +47,70 @@ void __iomem *vc4_ioremap_regs(struct platform_device *dev, int index)
 
 static void vc4_drm_preclose(struct drm_device *dev, struct drm_file *file)
 {
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
 	struct drm_crtc *crtc;
 
-	list_for_each_entry(crtc, &dev->mode_config.crtc_list, head)
-		vc4_cancel_page_flip(crtc, file);
+	list_for_each_entry(crtc, &dev->mode_config.crtc_list, head) {
+		if (vc4->firmware_kms)
+			vc4_fkms_cancel_page_flip(crtc, file);
+		else
+			vc4_cancel_page_flip(crtc, file);
+	}
+}
+
+void vc4_dump_regs32(const struct debugfs_reg32 *regs, unsigned int num_regs,
+		     void __iomem *base, const char *prefix)
+{
+	unsigned int i;
+
+	for (i = 0; i < num_regs; i++) {
+		DRM_INFO("%s0x%04lx (%s): 0x%08x\n",
+			 prefix, regs[i].offset, regs[i].name,
+			 readl(base + regs[i].offset));
+	}
+}
+
+static int vc4_get_param_ioctl(struct drm_device *dev, void *data,
+			       struct drm_file *file_priv)
+{
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
+	struct drm_vc4_get_param *args = data;
+	int ret;
+
+	if (args->pad != 0)
+		return -EINVAL;
+
+	switch (args->param) {
+	case DRM_VC4_PARAM_V3D_IDENT0:
+		ret = pm_runtime_get_sync(&vc4->v3d->pdev->dev);
+		if (ret < 0)
+			return ret;
+		args->value = V3D_READ(V3D_IDENT0);
+		pm_runtime_put(&vc4->v3d->pdev->dev);
+		break;
+	case DRM_VC4_PARAM_V3D_IDENT1:
+		ret = pm_runtime_get_sync(&vc4->v3d->pdev->dev);
+		if (ret < 0)
+			return ret;
+		args->value = V3D_READ(V3D_IDENT1);
+		pm_runtime_put(&vc4->v3d->pdev->dev);
+		break;
+	case DRM_VC4_PARAM_V3D_IDENT2:
+		ret = pm_runtime_get_sync(&vc4->v3d->pdev->dev);
+		if (ret < 0)
+			return ret;
+		args->value = V3D_READ(V3D_IDENT2);
+		pm_runtime_put(&vc4->v3d->pdev->dev);
+		break;
+	case DRM_VC4_PARAM_SUPPORTS_BRANCHES:
+		args->value = true;
+		break;
+	default:
+		DRM_DEBUG("Unknown parameter %d\n", args->param);
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 static void vc4_lastclose(struct drm_device *dev)
@@ -75,14 +136,15 @@ static const struct file_operations vc4_drm_fops = {
 };
 
 static const struct drm_ioctl_desc vc4_drm_ioctls[] = {
-	DRM_IOCTL_DEF_DRV(VC4_SUBMIT_CL, vc4_submit_cl_ioctl, 0),
-	DRM_IOCTL_DEF_DRV(VC4_WAIT_SEQNO, vc4_wait_seqno_ioctl, 0),
-	DRM_IOCTL_DEF_DRV(VC4_WAIT_BO, vc4_wait_bo_ioctl, 0),
-	DRM_IOCTL_DEF_DRV(VC4_CREATE_BO, vc4_create_bo_ioctl, 0),
-	DRM_IOCTL_DEF_DRV(VC4_MMAP_BO, vc4_mmap_bo_ioctl, 0),
-	DRM_IOCTL_DEF_DRV(VC4_CREATE_SHADER_BO, vc4_create_shader_bo_ioctl, 0),
+	DRM_IOCTL_DEF_DRV(VC4_SUBMIT_CL, vc4_submit_cl_ioctl, DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(VC4_WAIT_SEQNO, vc4_wait_seqno_ioctl, DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(VC4_WAIT_BO, vc4_wait_bo_ioctl, DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(VC4_CREATE_BO, vc4_create_bo_ioctl, DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(VC4_MMAP_BO, vc4_mmap_bo_ioctl, DRM_RENDER_ALLOW),
+	DRM_IOCTL_DEF_DRV(VC4_CREATE_SHADER_BO, vc4_create_shader_bo_ioctl, DRM_RENDER_ALLOW),
 	DRM_IOCTL_DEF_DRV(VC4_GET_HANG_STATE, vc4_get_hang_state_ioctl,
 			  DRM_ROOT_ONLY),
+	DRM_IOCTL_DEF_DRV(VC4_GET_PARAM, vc4_get_param_ioctl, DRM_RENDER_ALLOW),
 };
 
 static struct drm_driver vc4_drm_driver = {
@@ -103,6 +165,8 @@ static struct drm_driver vc4_drm_driver = {
 	.enable_vblank = vc4_enable_vblank,
 	.disable_vblank = vc4_disable_vblank,
 	.get_vblank_counter = drm_vblank_no_hw_counter,
+	.get_scanout_position = vc4_crtc_get_scanoutpos,
+	.get_vblank_timestamp = vc4_crtc_get_vblank_timestamp,
 
 #if defined(CONFIG_DEBUG_FS)
 	.debugfs_init = vc4_debugfs_init,
@@ -189,7 +253,6 @@ static int vc4_drm_bind(struct device *dev)
 	struct drm_device *drm;
 	struct drm_connector *connector;
 	struct vc4_dev *vc4;
-	struct device_node *firmware_node;
 	int ret = 0;
 
 	dev->coherent_dma_mask = DMA_BIT_MASK(32);
@@ -197,14 +260,6 @@ static int vc4_drm_bind(struct device *dev)
 	vc4 = devm_kzalloc(dev, sizeof(*vc4), GFP_KERNEL);
 	if (!vc4)
 		return -ENOMEM;
-
-	firmware_node = of_parse_phandle(dev->of_node, "firmware", 0);
-	vc4->firmware = rpi_firmware_get(firmware_node);
-	if (!vc4->firmware) {
-		DRM_DEBUG("Failed to get Raspberry Pi firmware reference.\n");
-		return -EPROBE_DEFER;
-	}
-	of_node_put(firmware_node);
 
 	drm = drm_dev_alloc(&vc4_drm_driver, dev);
 	if (!drm)
@@ -218,8 +273,6 @@ static int vc4_drm_bind(struct device *dev)
 	vc4_bo_cache_init(drm);
 
 	drm_mode_config_init(drm);
-	if (ret)
-		goto unref;
 
 	vc4_gem_init(drm);
 
@@ -253,7 +306,6 @@ unbind_all:
 	component_unbind_all(dev, drm);
 gem_destroy:
 	vc4_gem_destroy(drm);
-unref:
 	drm_dev_unref(drm);
 	vc4_bo_cache_destroy(drm);
 	return ret;
@@ -281,8 +333,10 @@ static const struct component_master_ops vc4_drm_ops = {
 static struct platform_driver *const component_drivers[] = {
 	&vc4_hdmi_driver,
 	&vc4_dpi_driver,
-	&vc4_crtc_driver,
+	&vc4_dsi_driver,
 	&vc4_hvs_driver,
+	&vc4_crtc_driver,
+	&vc4_firmware_kms_driver,
 	&vc4_v3d_driver,
 };
 
