@@ -61,7 +61,7 @@ this becomes a line in config.txt:
 
     dtoverlay=lirc-rpi
 
-This causes the file /boot/overlays/lirc-rpi-overlay.dtb to be loaded. By
+This causes the file /boot/overlays/lirc-rpi.dtbo to be loaded. By
 default it will use GPIOs 17 (out) and 18 (in), but this can be modified using
 DT parameters:
 
@@ -283,8 +283,7 @@ Params: swap_lr                 Reverse the channel allocation, which will also
 
 
 Name:   bmp085_i2c-sensor
-Info:   Configures the BMP085/BMP180 digital barometric pressure and temperature
-        sensors from Bosch Sensortec
+Info:   This overlay is now deprecated - see i2c-sensor
 Load:   dtoverlay=bmp085_i2c-sensor
 Params: <None>
 
@@ -344,9 +343,17 @@ Params: dr_mode                 Dual role mode: "host", "peripheral" or "otg"
 
 
 Name:   enc28j60
-Info:   Overlay for the Microchip ENC28J60 Ethernet Controller (SPI)
+Info:   Overlay for the Microchip ENC28J60 Ethernet Controller on SPI0
 Load:   dtoverlay=enc28j60,<param>=<val>
 Params: int_pin                 GPIO used for INT (default 25)
+
+        speed                   SPI bus speed (default 12000000)
+
+
+Name:   enc28j60-spi2
+Info:   Overlay for the Microchip ENC28J60 Ethernet Controller on SPI2
+Load:   dtoverlay=enc28j60-spi2,<param>=<val>
+Params: int_pin                 GPIO used for INT (default 39)
 
         speed                   SPI bus speed (default 12000000)
 
@@ -498,7 +505,11 @@ Params: addr                    I2C address of PCA9685A (default 0x40)
 Name:   i2c-rtc
 Info:   Adds support for a number of I2C Real Time Clock devices
 Load:   dtoverlay=i2c-rtc,<param>=<val>
-Params: ds1307                  Select the DS1307 device
+Params: abx80x                  Select one of the ABx80x family:
+                                  AB0801, AB0803, AB0804, AB0805,
+                                  AB1801, AB1803, AB1804, AB1805
+
+        ds1307                  Select the DS1307 device
 
         ds1339                  Select the DS1339 device
 
@@ -514,10 +525,23 @@ Params: ds1307                  Select the DS1307 device
 
         pcf8563                 Select the PCF8563 device
 
-        trickle-resistor-ohms   Resistor value for trickle charge (DS1339-only)
+        trickle-diode-type      Diode type for trickle charge - "standard" or
+                                "schottky" (ABx80x only)
+
+        trickle-resistor-ohms   Resistor value for trickle charge (DS1339,
+                                ABx80x)
 
         wakeup-source           Specify that the RTC can be used as a wakeup
                                 source
+
+
+Name:   i2c-sensor
+Info:   Adds support for a number of I2C barometric pressure and temperature
+        sensors on i2c_arm
+Load:   dtoverlay=i2c-sensor,<param>=<val>
+Params: bmp085                  Select the Bosch sensortronic BMP085
+
+        bmp280                  Select the Bosch sensortronic BMP280
 
 
 Name:   i2c0-bcm2708
