@@ -49,11 +49,29 @@
     };
 
     fragment@3 {
-        target = <&i2c1>;
+        target = <&i2c_arm>;
         __overlay__ {
             #address-cells = <1>;
             #size-cells = <0>;
             status = "okay";
+
+            pcf85063: pcf85063@61 {
+                compatible = "nxp,pcf85063";
+                reg = <0x61>;
+                status = "enable";
+            };
+
+            lm75b: lm75b@50 {
+                compatible = "lm75b";
+                reg = <0x50>;
+                status = "enable";
+            };
+
+            ad5247: ad5247@2d {
+                compatible = "ad5247";
+                reg = <0x2d>;
+                status = "enable";
+            };
         };
     };
 
@@ -76,7 +94,7 @@
             pinctrl-0 = <&spi0_pins &spi0_cs_pins>;
             pinctrl-names = "default";
             status = "okay";
-            cs-gpios = <&gpio 8 1>, <&gpio 7 1>, <&gpio 17 1>, <&gpio 27 1>;
+            cs-gpios = <&gpio 8 1>, <&gpio 7 1>, <&gpio 17 1>, <&gpio 27 1>, <&gpio 20 1>;
 
             spidev@0 {
                 status = "disabled";
@@ -142,6 +160,16 @@
 
                 vcc-supply = <&udrc0_ldoin>;                
             };
+
+            mcp3008@4 {
+                #address-cells = <1>;
+                #size-cells = <0>;
+                compatible = "mcp3008";
+                reg = <4>;
+                status = "okay";
+
+                spi-max-frequency = <1350000>;
+            };
             
         };
     };
@@ -150,7 +178,7 @@
         target = <&gpio>;
         __overlay__ {
             spi0_cs_pins: spi0_cs_pins {
-                brcm,pins = <7 8 17 27>;
+                brcm,pins = <7 8 17 27 20>;
                 brcm,function = <1>;
             };
 
