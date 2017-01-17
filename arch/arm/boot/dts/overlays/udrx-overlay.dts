@@ -94,7 +94,7 @@
             pinctrl-0 = <&spi0_pins &spi0_cs_pins>;
             pinctrl-names = "default";
             status = "okay";
-            cs-gpios = <&gpio 8 1>, <&gpio 7 1>, <&gpio 17 1>, <&gpio 27 1>, <&gpio 20 1>;
+            cs-gpios = <&gpio 8 1>, <&gpio 7 1>, <&gpio 17 1>, <&gpio 27 1>, <&gpio 16 1>;
 
             spidev@0 {
                 status = "disabled";
@@ -178,7 +178,7 @@
         target = <&gpio>;
         __overlay__ {
             spi0_cs_pins: spi0_cs_pins {
-                brcm,pins = <7 8 17 27 20>;
+                brcm,pins = <7 8 17 27 16>;
                 brcm,function = <1>;
             };
 
