@@ -58,19 +58,19 @@
             pcf85063: pcf85063@61 {
                 compatible = "nxp,pcf85063";
                 reg = <0x61>;
-                status = "enable";
+                status = "okay";
             };
 
             lm75b: lm75b@50 {
                 compatible = "lm75b";
                 reg = <0x50>;
-                status = "enable";
+                status = "okay";
             };
 
             ad5247: ad5247@2d {
                 compatible = "ad5247";
                 reg = <0x2d>;
-                status = "enable";
+                status = "okay";
             };
         };
     };
