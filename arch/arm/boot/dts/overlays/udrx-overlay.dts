@@ -94,7 +94,8 @@
             pinctrl-0 = <&spi0_pins &spi0_cs_pins>;
             pinctrl-names = "default";
             status = "okay";
-            cs-gpios = <&gpio 8 1>, <&gpio 7 1>, <&gpio 17 1>, <&gpio 27 1>, <&gpio 16 1>;
+            /* cs-gpios = <&gpio 8 1>, <&gpio 7 1>, <&gpio 17 1>, <&gpio 27 1>, <&gpio 16 1>; */
+            cs-gpios = <&gpio 7 1>, <&gpio 12 1>, <&gpio 5 1>, <&gpio 8 1>, <&gpio 16 1>;
 
             spidev@0 {
                 status = "disabled";
@@ -120,6 +121,11 @@
                 compatible = "ti,tlv320aic32x4";
                 reg = <1>;
                 status = "okay";
+
+                pinctrl-names = "default";
+                pinctrl-0 = <&master_reset>;
+
+                reset-gpios = <&gpio 25 1>;
                 
                 spi-max-frequency = <10000000>;
                 spi-cpha;
@@ -178,13 +184,19 @@
         target = <&gpio>;
         __overlay__ {
             spi0_cs_pins: spi0_cs_pins {
-                brcm,pins = <7 8 17 27 16>;
+                brcm,pins = <5 7 8 12 16>;
                 brcm,function = <1>;
             };
 
             pwm_pins: pwm_pins {
                 brcm,pins = <13>;
                 brcm,function = <4>;
+            };
+
+            master_reset: master_reset {
+                brcm,pins = <25>;
+                brcm,function = <1>;
+                brcm,pull = <1>;
             };
         };
     };
