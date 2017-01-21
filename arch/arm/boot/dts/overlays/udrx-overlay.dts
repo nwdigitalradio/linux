@@ -55,15 +55,15 @@
             #size-cells = <0>;
             status = "okay";
 
-            pcf85063: pcf85063@61 {
-                compatible = "nxp,pcf85063";
-                reg = <0x61>;
+            pcf8523: pcf8523@68 {
+                compatible = "nxp,pcf8523";
+                reg = <0x68>;
                 status = "okay";
             };
 
-            lm75b: lm75b@50 {
+            lm75b: lm75b@4a {
                 compatible = "lm75b";
-                reg = <0x50>;
+                reg = <0x4a>;
                 status = "okay";
             };
 
