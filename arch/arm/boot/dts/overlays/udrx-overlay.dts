@@ -67,9 +67,9 @@
                 status = "okay";
             };
 
-            ad5247: ad5247@2d {
+            ad5247: ad5247@2e {
                 compatible = "ad5247";
-                reg = <0x2d>;
+                reg = <0x2e>;
                 status = "okay";
             };
         };
