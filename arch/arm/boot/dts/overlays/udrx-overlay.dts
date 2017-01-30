@@ -111,7 +111,7 @@
                 compatible = "adi,adf4360";
                 reg = <0>;
                 status = "okay";
-                
+
                 spi-max-frequency = <20000000>;
             };
 
@@ -126,7 +126,7 @@
                 pinctrl-0 = <&master_reset>;
 
                 reset-gpios = <&gpio 25 1>;
-                
+
                 spi-max-frequency = <10000000>;
                 spi-cpha;
 
@@ -140,43 +140,52 @@
 				ti,lo-ldoin-powered;
 
 				ti,avdd-weak-disable;
-		
+
 				ti,common-mode-microvolt = <1650000>;
             };
-            
+
             cmx991@2 {
             	#address-cells = <1>;
             	#size-cells = <0>;
             	compatible = "cml,cmx991";
             	reg = <2>;
             	status = "okay";
-            	
+
             	spi-max-frequency = <5000000>;
             };
-            
+
             ad9832@3 {
                 #address-cells = <1>;
                 #size-cells = <0>;
                 compatible = "adi,ad9832";
                 reg = <3>;
                 status = "okay";
-                
+
                 spi-max-frequency = <20000000>;
                 spi-cpha;
 
-                vcc-supply = <&udrc0_ldoin>;                
+                vcc-supply = <&udrc0_ldoin>;
             };
 
-            mcp3008@4 {
+            adc: mcp3008@4 {
                 #address-cells = <1>;
                 #size-cells = <0>;
                 compatible = "mcp3008";
                 reg = <4>;
                 status = "okay";
 
+                vref-supply = <&udrc0_ldoin>;
+
+                #io-channel-cells = <1>;
+
                 spi-max-frequency = <1350000>;
             };
-            
+
+            iio_hwmon {
+            	compatible = "iio-hwmon";
+            	io-channels = <&adc 0>, <&adc 1>, <&adc 2>, <&adc 3>, <&adc 4>, <&adc 5>, <&adc 6>, <&adc 7>;
+            };
+
         };
     };
 
@@ -207,7 +216,7 @@
             status = "okay";
         };
     };
-    
+
     fragment@8 {
     	target = <&sdhost>;
     	__overlay__ {
