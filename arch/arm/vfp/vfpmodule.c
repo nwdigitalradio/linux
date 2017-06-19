@@ -156,10 +156,6 @@ static void vfp_thread_copy(struct thread_info *thread)
  *   - we could be preempted if tree preempt rcu is enabled, so
  *	it is unsafe to use thread->cpu.
  *  THREAD_NOTIFY_EXIT
- *   - the thread (v) will be running on the local CPU, so
- *	v === current_thread_info()
- *   - thread->cpu is the local CPU number at the time it is accessed,
- *	but may change at any time.
  *   - we could be preempted if tree preempt rcu is enabled, so
  *	it is unsafe to use thread->cpu.
  */
@@ -186,7 +182,7 @@ static int vfp_notifier(struct notifier_block *self, unsigned long cmd, void *v)
 		if ((fpexc & FPEXC_EN) && vfp_current_hw_state[cpu]) {
 			/* vfp_save_state oopses on VFP11 if EX bit set */
 			fmxr(FPEXC, fpexc & ~FPEXC_EX);
- 			vfp_save_state(vfp_current_hw_state[cpu], fpexc);
+			vfp_save_state(vfp_current_hw_state[cpu], fpexc);
 		}
 #endif
 
@@ -659,19 +655,19 @@ int vfp_restore_user_hwstate(struct user_vfp __user *ufp,
  * hardware state at every thread switch.  We clear our held state when
  * a CPU has been killed, indicating that the VFP hardware doesn't contain
  * a threads VFP state.  When a CPU starts up, we re-enable access to the
- * VFP hardware.
- *
- * Both CPU_DYING and CPU_STARTING are called on the CPU which
+ * VFP hardware. The callbacks below are called on the CPU which
  * is being offlined/onlined.
  */
-static int vfp_hotplug(struct notifier_block *b, unsigned long action,
-	void *hcpu)
+static int vfp_dying_cpu(unsigned int cpu)
 {
-	if (action == CPU_DYING || action == CPU_DYING_FROZEN)
-		vfp_current_hw_state[(long)hcpu] = NULL;
-	else if (action == CPU_STARTING || action == CPU_STARTING_FROZEN)
-		vfp_enable(NULL);
-	return NOTIFY_OK;
+	vfp_force_reload(cpu, current_thread_info());
+	return 0;
+}
+
+static int vfp_starting_cpu(unsigned int unused)
+{
+	vfp_enable(NULL);
+	return 0;
 }
 
 void vfp_kmode_exception(void)
@@ -715,7 +711,7 @@ void kernel_neon_begin(void)
 
 	fpexc = fmrx(FPEXC) | FPEXC_EN;
 	/* vfp_save_state oopses on VFP11 if EX bit set */
-	fmxr(FPEXC, fpexc & ~FPEXC_EX);	
+	fmxr(FPEXC, fpexc & ~FPEXC_EX);
 
 	/*
 	 * Save the userland NEON/VFP state. Under UP,
@@ -749,6 +745,10 @@ static int __init vfp_init(void)
 	unsigned int vfpsid;
 	unsigned int cpu_arch = cpu_architecture();
 
+	/*
+	 * Enable the access to the VFP on all online CPUs so the
+	 * following test on FPSID will succeed.
+	 */
 	if (cpu_arch >= CPU_ARCH_ARMv6)
 		on_each_cpu(vfp_enable, NULL, 1);
 
@@ -811,7 +811,9 @@ static int __init vfp_init(void)
 		VFP_arch = (vfpsid & FPSID_ARCH_MASK) >> FPSID_ARCH_BIT;
 	}
 
-	hotcpu_notifier(vfp_hotplug, 0);
+	cpuhp_setup_state_nocalls(CPUHP_AP_ARM_VFP_STARTING,
+				  "AP_ARM_VFP_STARTING", vfp_starting_cpu,
+				  vfp_dying_cpu);
 
 	vfp_vector = vfp_support_entry;
 

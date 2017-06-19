@@ -36,8 +36,9 @@
 #include "dwc_otg_regs.h"
 
 #include <linux/jiffies.h>
+#ifdef CONFIG_ARM
 #include <asm/fiq.h>
-
+#endif
 
 extern bool microframe_schedule;
 
@@ -514,6 +515,10 @@ int32_t dwc_otg_hcd_handle_port_intr(dwc_otg_hcd_t * dwc_otg_hcd)
 			dwc_otg_host_if_t *host_if =
 			    dwc_otg_hcd->core_if->host_if;
 
+			dwc_otg_hcd->flags.b.port_speed = hprt0.b.prtspd;
+			if (microframe_schedule)
+				init_hcd_usecs(dwc_otg_hcd);
+
 			/* Every time when port enables calculate
 			 * HFIR.FrInterval
 			 */
@@ -944,7 +949,6 @@ static void release_channel(dwc_otg_hcd_t * hcd,
 	dwc_otg_transaction_type_e tr_type;
 	int free_qtd;
 	dwc_irqflags_t flags;
-	dwc_spinlock_t *channel_lock = hcd->channel_lock;
 
 	int hog_port = 0;
 
@@ -1033,11 +1037,8 @@ cleanup:
 			break;
 		}
 	} else {
-
-		DWC_SPINLOCK_IRQSAVE(channel_lock, &flags);
 		hcd->available_host_channels++;
 		fiq_print(FIQDBG_INT, hcd->fiq_state, "AHC = %d ", hcd->available_host_channels);
-		DWC_SPINUNLOCK_IRQRESTORE(channel_lock, flags);
 	}
 
 	/* Try to queue more transfers now that there's a free channel. */
@@ -2373,23 +2374,35 @@ void dwc_otg_hcd_handle_hc_fsm(dwc_otg_hcd_t *hcd, uint32_t num)
 {
 	struct fiq_channel_state *st = &hcd->fiq_state->channel[num];
 	dwc_hc_t *hc = hcd->hc_ptr_array[num];
-	dwc_otg_qtd_t *qtd = DWC_CIRCLEQ_FIRST(&hc->qh->qtd_list);
-	dwc_otg_qh_t *qh = hc->qh;
+	dwc_otg_qtd_t *qtd;
 	dwc_otg_hc_regs_t *hc_regs = hcd->core_if->host_if->hc_regs[num];
 	hcint_data_t hcint = hcd->fiq_state->channel[num].hcint_copy;
+	hctsiz_data_t hctsiz = hcd->fiq_state->channel[num].hctsiz_copy;
 	int hostchannels  = 0;
 	fiq_print(FIQDBG_INT, hcd->fiq_state, "OUT %01d %01d ", num , st->fsm);
 
 	hostchannels = hcd->available_host_channels;
+	if (hc->halt_pending) {
+		/* Dequeue: The FIQ was allowed to complete the transfer but state has been cleared. */
+		if (hc->qh && st->fsm == FIQ_NP_SPLIT_DONE &&
+				hcint.b.xfercomp && hc->qh->ep_type == UE_BULK) {
+			if (hctsiz.b.pid == DWC_HCTSIZ_DATA0) {
+				hc->qh->data_toggle = DWC_OTG_HC_PID_DATA1;
+			} else {
+				hc->qh->data_toggle = DWC_OTG_HC_PID_DATA0;
+			}
+		}
+		release_channel(hcd, hc, NULL, hc->halt_status);
+		return;
+	}
+
+	qtd = DWC_CIRCLEQ_FIRST(&hc->qh->qtd_list);
 	switch (st->fsm) {
 	case FIQ_TEST:
 		break;
 
 	case FIQ_DEQUEUE_ISSUED:
-		/* hc_halt was called. QTD no longer exists. */
-		/* TODO: for a nonperiodic split transaction, need to issue a
-		 * CLEAR_TT_BUFFER hub command if we were in the start-split phase.
-		 */
+		/* Handled above, but keep for posterity */
 		release_channel(hcd, hc, NULL, hc->halt_status);
 		break;
 
@@ -2402,6 +2415,11 @@ void dwc_otg_hcd_handle_hc_fsm(dwc_otg_hcd_t *hcd, uint32_t num)
 			handle_hc_xfercomp_intr(hcd, hc, hc_regs, qtd);
 		} else if (hcint.b.nak) {
 			handle_hc_nak_intr(hcd, hc, hc_regs, qtd);
+		} else {
+			DWC_WARN("Unexpected IRQ state on FSM transaction:"
+					"dev_addr=%d ep=%d fsm=%d, hcint=0x%08x\n",
+				hc->dev_addr, hc->ep_num, st->fsm, hcint.d32);
+			release_channel(hcd, hc, qtd, DWC_OTG_HC_XFER_NO_HALT_STATUS);
 		}
 		break;
 
@@ -2417,8 +2435,10 @@ void dwc_otg_hcd_handle_hc_fsm(dwc_otg_hcd_t *hcd, uint32_t num)
 		} else if (hcint.b.ahberr) {
 			handle_hc_ahberr_intr(hcd, hc, hc_regs, qtd);
 		} else {
-			local_fiq_disable();
-			BUG();
+			DWC_WARN("Unexpected IRQ state on FSM transaction:"
+					"dev_addr=%d ep=%d fsm=%d, hcint=0x%08x\n",
+				hc->dev_addr, hc->ep_num, st->fsm, hcint.d32);
+			release_channel(hcd, hc, qtd, DWC_OTG_HC_XFER_NO_HALT_STATUS);
 		}
 		break;
 
@@ -2434,8 +2454,10 @@ void dwc_otg_hcd_handle_hc_fsm(dwc_otg_hcd_t *hcd, uint32_t num)
 		} else if (hcint.b.ahberr) {
 			handle_hc_ahberr_intr(hcd, hc, hc_regs, qtd);
 		} else {
-			local_fiq_disable();
-			BUG();
+			DWC_WARN("Unexpected IRQ state on FSM transaction:"
+					"dev_addr=%d ep=%d fsm=%d, hcint=0x%08x\n",
+				hc->dev_addr, hc->ep_num, st->fsm, hcint.d32);
+			release_channel(hcd, hc, qtd, DWC_OTG_HC_XFER_NO_HALT_STATUS);
 		}
 		break;
 
@@ -2493,7 +2515,7 @@ void dwc_otg_hcd_handle_hc_fsm(dwc_otg_hcd_t *hcd, uint32_t num)
 			} else {
 				frame_desc->status = 0;
 				/* Unswizzle dma */
-				len = dwc_otg_fiq_unsetup_per_dma(hcd, qh, qtd, num);
+				len = dwc_otg_fiq_unsetup_per_dma(hcd, hc->qh, qtd, num);
 				frame_desc->actual_length = len;
 			}
 			qtd->isoc_frame_index++;
@@ -2555,7 +2577,7 @@ void dwc_otg_hcd_handle_hc_fsm(dwc_otg_hcd_t *hcd, uint32_t num)
 		 * The status is recorded as the interrupt state should the transaction
 		 * fail.
 		 */
-		dwc_otg_fiq_unmangle_isoc(hcd, qh, qtd, num);
+		dwc_otg_fiq_unmangle_isoc(hcd, hc->qh, qtd, num);
 		hcd->fops->complete(hcd, qtd->urb->priv, qtd->urb, 0);
 		release_channel(hcd, hc, qtd, DWC_OTG_HC_XFER_URB_COMPLETE);
 		break;
@@ -2638,10 +2660,15 @@ int32_t dwc_otg_hcd_handle_hc_n_intr(dwc_otg_hcd_t * dwc_otg_hcd, uint32_t num)
 	hc = dwc_otg_hcd->hc_ptr_array[num];
 	hc_regs = dwc_otg_hcd->core_if->host_if->hc_regs[num];
 	if(hc->halt_status == DWC_OTG_HC_XFER_URB_DEQUEUE) {
-		/* We are responding to a channel disable. Driver
-		 * state is cleared - our qtd has gone away.
+		/* A dequeue was issued for this transfer. Our QTD has gone away
+		 * but in the case of a FIQ transfer, the transfer would have run
+		 * to completion.
 		 */
-		release_channel(dwc_otg_hcd, hc, NULL, hc->halt_status);
+		if (fiq_fsm_enable && dwc_otg_hcd->fiq_state->channel[num].fsm != FIQ_PASSTHROUGH) {
+			dwc_otg_hcd_handle_hc_fsm(dwc_otg_hcd, num);
+		} else {
+			release_channel(dwc_otg_hcd, hc, NULL, hc->halt_status);
+		}
 		return 1;
 	}
 	qtd = DWC_CIRCLEQ_FIRST(&hc->qh->qtd_list);

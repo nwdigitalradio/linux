@@ -18,4 +18,4 @@ snd-pxa2xx-ac97-objs		:= pxa2xx-ac97.o
 obj-$(CONFIG_SND_BCM2835)	+= snd-bcm2835.o
 snd-bcm2835-objs		:= bcm2835.o bcm2835-ctl.o bcm2835-pcm.o bcm2835-vchiq.o
 
-ccflags-y += -Idrivers/misc/vc04_services -Idrivers/misc/vc04_services/interface/vcos/linuxkernel -D__VCCOREVER__=0x04000000
+ccflags-y += -Idrivers/staging/vc04_services -Idrivers/staging/vc04_services/interface/vcos/linuxkernel -D__VCCOREVER__=0x04000000

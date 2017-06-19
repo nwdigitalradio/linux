@@ -1165,7 +1165,7 @@ serial_omap_type(struct uart_port *port)
 
 #define BOTH_EMPTY (UART_LSR_TEMT | UART_LSR_THRE)
 
-static inline void wait_for_xmitr(struct uart_omap_port *up)
+static void __maybe_unused wait_for_xmitr(struct uart_omap_port *up)
 {
 	unsigned int status, tmout = 10000;
 
@@ -1712,7 +1712,8 @@ static int serial_omap_probe(struct platform_device *pdev)
 	return 0;
 
 err_add_port:
-	pm_runtime_put(&pdev->dev);
+	pm_runtime_dont_use_autosuspend(&pdev->dev);
+	pm_runtime_put_sync(&pdev->dev);
 	pm_runtime_disable(&pdev->dev);
 	pm_qos_remove_request(&up->pm_qos_request);
 	device_init_wakeup(up->dev, false);
@@ -1725,9 +1726,13 @@ static int serial_omap_remove(struct platform_device *dev)
 {
 	struct uart_omap_port *up = platform_get_drvdata(dev);
 
+	pm_runtime_get_sync(up->dev);
+
+	uart_remove_one_port(&serial_omap_reg, &up->port);
+
+	pm_runtime_dont_use_autosuspend(up->dev);
 	pm_runtime_put_sync(up->dev);
 	pm_runtime_disable(up->dev);
-	uart_remove_one_port(&serial_omap_reg, &up->port);
 	pm_qos_remove_request(&up->pm_qos_request);
 	device_init_wakeup(&dev->dev, false);
 
@@ -1870,7 +1875,7 @@ static struct platform_driver serial_omap_driver = {
 	.probe          = serial_omap_probe,
 	.remove         = serial_omap_remove,
 	.driver		= {
-		.name	= DRIVER_NAME,
+		.name	= OMAP_SERIAL_DRIVER_NAME,
 		.pm	= &serial_omap_dev_pm_ops,
 		.of_match_table = of_match_ptr(omap_serial_of_match),
 	},

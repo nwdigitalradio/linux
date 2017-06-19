@@ -335,8 +335,8 @@ static int mmap_batch_fn(void *data, int nr, void *state)
 				st->global_error = 1;
 		}
 	}
-	st->va += PAGE_SIZE * nr;
-	st->index += nr;
+	st->va += XEN_PAGE_SIZE * nr;
+	st->index += nr / XEN_PFN_PER_PAGE;
 
 	return 0;
 }
@@ -582,7 +582,7 @@ static long privcmd_ioctl(struct file *file,
 static void privcmd_close(struct vm_area_struct *vma)
 {
 	struct page **pages = vma->vm_private_data;
-	int numpgs = (vma->vm_end - vma->vm_start) >> PAGE_SHIFT;
+	int numpgs = vma_pages(vma);
 	int numgfns = (vma->vm_end - vma->vm_start) >> XEN_PAGE_SHIFT;
 	int rc;
 

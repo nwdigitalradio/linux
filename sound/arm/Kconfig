@@ -9,14 +9,6 @@ menuconfig SND_ARM
 	  Drivers that are implemented on ASoC can be found in
 	  "ALSA for SoC audio support" section.
 
-config SND_PXA2XX_LIB
-	tristate
-	select SND_AC97_CODEC if SND_PXA2XX_LIB_AC97
-	select SND_DMAENGINE_PCM
-
-config SND_PXA2XX_LIB_AC97
-	bool
-
 if SND_ARM
 
 config SND_ARMAACI
@@ -42,11 +34,17 @@ config SND_PXA2XX_AC97
 
 config SND_BCM2835
 	tristate "BCM2835 ALSA driver"
-	depends on (ARCH_BCM2708 || ARCH_BCM2709 || ARCH_BCM2835) \
-		   && BCM2708_VCHIQ && SND
+	depends on ARCH_BCM2835 && BCM2708_VCHIQ && SND
 	select SND_PCM
 	help
 	  Say Y or M if you want to support BCM2835 Alsa pcm card driver
 
 endif	# SND_ARM
 
+config SND_PXA2XX_LIB
+	tristate
+	select SND_AC97_CODEC if SND_PXA2XX_LIB_AC97
+	select SND_DMAENGINE_PCM
+
+config SND_PXA2XX_LIB_AC97
+	bool

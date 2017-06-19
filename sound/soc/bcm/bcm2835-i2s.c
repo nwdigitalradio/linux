@@ -31,22 +31,21 @@
  * General Public License for more details.
  */
 
-#include <linux/init.h>
-#include <linux/module.h>
+#include <linux/clk.h>
+#include <linux/delay.h>
 #include <linux/device.h>
+#include <linux/init.h>
+#include <linux/io.h>
+#include <linux/module.h>
 #include <linux/of_address.h>
 #include <linux/slab.h>
-#include <linux/delay.h>
-#include <linux/io.h>
-#include <linux/clk.h>
-#include <linux/of_address.h>
 
 #include <sound/core.h>
+#include <sound/dmaengine_pcm.h>
+#include <sound/initval.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
-#include <sound/initval.h>
 #include <sound/soc.h>
-#include <sound/dmaengine_pcm.h>
 
 /* I2S registers */
 #define BCM2835_I2S_CS_A_REG		0x00
@@ -240,6 +239,7 @@ static int bcm2835_i2s_hw_params(struct snd_pcm_substream *substream,
 	unsigned int ch1pos, ch2pos, mode, format;
 	uint32_t csreg;
 
+
 	/*
 	 * If a stream is already enabled,
 	 * the registers are already set properly.
@@ -259,15 +259,12 @@ static int bcm2835_i2s_hw_params(struct snd_pcm_substream *substream,
 	switch (params_format(params)) {
 	case SNDRV_PCM_FORMAT_S16_LE:
 		data_length = 16;
-		bclk_ratio = 50;
 		break;
 	case SNDRV_PCM_FORMAT_S24_LE:
 		data_length = 24;
-		bclk_ratio = 50;
 		break;
 	case SNDRV_PCM_FORMAT_S32_LE:
 		data_length = 32;
-		bclk_ratio = 100;
 		break;
 	default:
 		return -EINVAL;
@@ -277,10 +274,18 @@ static int bcm2835_i2s_hw_params(struct snd_pcm_substream *substream,
 	if (dev->bclk_ratio)
 		bclk_ratio = dev->bclk_ratio;
 	else
+		/* otherwise calculate a fitting block ratio */
 		bclk_ratio = 2 * data_length;
 
-	/* set target clock rate*/
-	clk_set_rate(dev->clk, sampling_rate * bclk_ratio);
+	/* Clock should only be set up here if CPU is clock master */
+	switch (dev->fmt & SND_SOC_DAIFMT_MASTER_MASK) {
+	case SND_SOC_DAIFMT_CBS_CFS:
+	case SND_SOC_DAIFMT_CBS_CFM:
+		clk_set_rate(dev->clk, sampling_rate * bclk_ratio);
+		break;
+	default:
+		break;
+	}
 
 	/* Setup the frame format */
 	format = BCM2835_I2S_CHEN;
@@ -308,6 +313,7 @@ static int bcm2835_i2s_hw_params(struct snd_pcm_substream *substream,
 
 	switch (params_channels(params)) {
 	case 2:
+	case 8:
 		format = BCM2835_I2S_CH1(format) | BCM2835_I2S_CH2(format);
 		format |= BCM2835_I2S_CH1(BCM2835_I2S_CHPOS(ch1pos));
 		format |= BCM2835_I2S_CH2(BCM2835_I2S_CHPOS(ch2pos));
@@ -406,22 +412,15 @@ static int bcm2835_i2s_hw_params(struct snd_pcm_substream *substream,
 
 	/* Setup the DMA parameters */
 	regmap_update_bits(dev->i2s_regmap, BCM2835_I2S_CS_A_REG,
-			   BCM2835_I2S_RXTHR(3)
-			   | BCM2835_I2S_TXTHR(3)
-			   | BCM2835_I2S_DMAEN,
-			   BCM2835_I2S_RXTHR(1)
-			   | BCM2835_I2S_TXTHR(1)
-			   | BCM2835_I2S_DMAEN);
+			BCM2835_I2S_RXTHR(1)
+			| BCM2835_I2S_TXTHR(1)
+			| BCM2835_I2S_DMAEN, 0xffffffff);
 
 	regmap_update_bits(dev->i2s_regmap, BCM2835_I2S_DREQ_A_REG,
-			   BCM2835_I2S_TX_PANIC(0x7f)
-			   | BCM2835_I2S_RX_PANIC(0x7f)
-			   | BCM2835_I2S_TX(0x7f)
-			   | BCM2835_I2S_RX(0x7f),
-			   BCM2835_I2S_TX_PANIC(0x10)
-			   | BCM2835_I2S_RX_PANIC(0x30)
-			   | BCM2835_I2S_TX(0x20)
-			   | BCM2835_I2S_RX(0x20));
+			  BCM2835_I2S_TX_PANIC(0x10)
+			| BCM2835_I2S_RX_PANIC(0x30)
+			| BCM2835_I2S_TX(0x30)
+			| BCM2835_I2S_RX(0x20), 0xffffffff);
 
 	/* Clear FIFOs */
 	bcm2835_i2s_clear_fifos(dev, true, true);
@@ -635,25 +634,6 @@ static const struct snd_soc_component_driver bcm2835_i2s_component = {
 	.name		= "bcm2835-i2s-comp",
 };
 
-static struct snd_pcm_hardware bcm2835_pcm_hardware = {
-	.info			= SNDRV_PCM_INFO_INTERLEAVED |
-				  SNDRV_PCM_INFO_JOINT_DUPLEX,
-	.formats		= SNDRV_PCM_FMTBIT_S16_LE |
-				  SNDRV_PCM_FMTBIT_S24_LE |
-				  SNDRV_PCM_FMTBIT_S32_LE,
-	.period_bytes_min	= 32,
-	.period_bytes_max	= 64 * PAGE_SIZE,
-	.periods_min		= 2,
-	.periods_max		= 255,
-	.buffer_bytes_max	= 128 * PAGE_SIZE,
-};
-
-static const struct snd_dmaengine_pcm_config bcm2835_dmaengine_pcm_config = {
-	.prepare_slave_config = snd_dmaengine_pcm_prepare_slave_config,
-	.pcm_hardware = &bcm2835_pcm_hardware,
-	.prealloc_buffer_size = 256 * PAGE_SIZE,
-};
-
 static int bcm2835_i2s_probe(struct platform_device *pdev)
 {
 	struct bcm2835_i2s_dev *dev;
@@ -662,11 +642,6 @@ static int bcm2835_i2s_probe(struct platform_device *pdev)
 	void __iomem *base;
 	const __be32 *addr;
 	dma_addr_t dma_base;
-
-	if (of_property_read_bool(pdev->dev.of_node, "brcm,enable-mmap"))
-		bcm2835_pcm_hardware.info |=
-			SNDRV_PCM_INFO_MMAP |
-			SNDRV_PCM_INFO_MMAP_VALID;
 
 	dev = devm_kzalloc(&pdev->dev, sizeof(*dev),
 			   GFP_KERNEL);
@@ -717,6 +692,15 @@ static int bcm2835_i2s_probe(struct platform_device *pdev)
 	dev->dma_data[SNDRV_PCM_STREAM_PLAYBACK].maxburst = 2;
 	dev->dma_data[SNDRV_PCM_STREAM_CAPTURE].maxburst = 2;
 
+	/*
+	 * Set the PACK flag to enable S16_LE support (2 S16_LE values
+	 * packed into 32-bit transfers).
+	 */
+	dev->dma_data[SNDRV_PCM_STREAM_PLAYBACK].flags =
+		SND_DMAENGINE_PCM_DAI_FLAG_PACK;
+	dev->dma_data[SNDRV_PCM_STREAM_CAPTURE].flags =
+		SND_DMAENGINE_PCM_DAI_FLAG_PACK;
+
 	/* BCLK ratio - use default */
 	dev->bclk_ratio = 0;
 
@@ -731,9 +715,7 @@ static int bcm2835_i2s_probe(struct platform_device *pdev)
 		return ret;
 	}
 
-	ret = devm_snd_dmaengine_pcm_register(&pdev->dev,
-			&bcm2835_dmaengine_pcm_config,
-			SND_DMAENGINE_PCM_FLAG_COMPAT);
+	ret = devm_snd_dmaengine_pcm_register(&pdev->dev, NULL, 0);
 	if (ret) {
 		dev_err(&pdev->dev, "Could not register PCM: %d\n", ret);
 		return ret;

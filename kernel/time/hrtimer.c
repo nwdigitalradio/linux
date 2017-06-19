@@ -182,7 +182,7 @@ hrtimer_check_target(struct hrtimer *timer, struct hrtimer_clock_base *new_base)
 #endif
 }
 
-#if defined(CONFIG_SMP) && defined(CONFIG_NO_HZ_COMMON)
+#ifdef CONFIG_NO_HZ_COMMON
 static inline
 struct hrtimer_cpu_base *get_target_base(struct hrtimer_cpu_base *base,
 					 int pinned)
@@ -312,7 +312,7 @@ EXPORT_SYMBOL_GPL(__ktime_divns);
  */
 ktime_t ktime_add_safe(const ktime_t lhs, const ktime_t rhs)
 {
-	ktime_t res = ktime_add(lhs, rhs);
+	ktime_t res = ktime_add_unsafe(lhs, rhs);
 
 	/*
 	 * We use KTIME_SEC_MAX here, the maximum timeout which we can
@@ -339,7 +339,7 @@ static void *hrtimer_debug_hint(void *addr)
  * fixup_init is called when:
  * - an active object is initialized
  */
-static int hrtimer_fixup_init(void *addr, enum debug_obj_state state)
+static bool hrtimer_fixup_init(void *addr, enum debug_obj_state state)
 {
 	struct hrtimer *timer = addr;
 
@@ -347,30 +347,25 @@ static int hrtimer_fixup_init(void *addr, enum debug_obj_state state)
 	case ODEBUG_STATE_ACTIVE:
 		hrtimer_cancel(timer);
 		debug_object_init(timer, &hrtimer_debug_descr);
-		return 1;
+		return true;
 	default:
-		return 0;
+		return false;
 	}
 }
 
 /*
  * fixup_activate is called when:
  * - an active object is activated
- * - an unknown object is activated (might be a statically initialized object)
+ * - an unknown non-static object is activated
  */
-static int hrtimer_fixup_activate(void *addr, enum debug_obj_state state)
+static bool hrtimer_fixup_activate(void *addr, enum debug_obj_state state)
 {
 	switch (state) {
-
-	case ODEBUG_STATE_NOTAVAILABLE:
-		WARN_ON_ONCE(1);
-		return 0;
-
 	case ODEBUG_STATE_ACTIVE:
 		WARN_ON(1);
 
 	default:
-		return 0;
+		return false;
 	}
 }
 
@@ -378,7 +373,7 @@ static int hrtimer_fixup_activate(void *addr, enum debug_obj_state state)
  * fixup_free is called when:
  * - an active object is freed
  */
-static int hrtimer_fixup_free(void *addr, enum debug_obj_state state)
+static bool hrtimer_fixup_free(void *addr, enum debug_obj_state state)
 {
 	struct hrtimer *timer = addr;
 
@@ -386,9 +381,9 @@ static int hrtimer_fixup_free(void *addr, enum debug_obj_state state)
 	case ODEBUG_STATE_ACTIVE:
 		hrtimer_cancel(timer);
 		debug_object_free(timer, &hrtimer_debug_descr);
-		return 1;
+		return true;
 	default:
-		return 0;
+		return false;
 	}
 }
 
@@ -435,6 +430,7 @@ void destroy_hrtimer_on_stack(struct hrtimer *timer)
 {
 	debug_object_free(timer, &hrtimer_debug_descr);
 }
+EXPORT_SYMBOL_GPL(destroy_hrtimer_on_stack);
 
 #else
 static inline void debug_hrtimer_init(struct hrtimer *timer) { }
@@ -520,7 +516,7 @@ static inline ktime_t hrtimer_update_base(struct hrtimer_cpu_base *base)
 /*
  * High resolution timer enabled ?
  */
-static int hrtimer_hres_enabled __read_mostly  = 1;
+static bool hrtimer_hres_enabled __read_mostly  = true;
 unsigned int hrtimer_resolution __read_mostly = LOW_RES_NSEC;
 EXPORT_SYMBOL_GPL(hrtimer_resolution);
 
@@ -529,13 +525,7 @@ EXPORT_SYMBOL_GPL(hrtimer_resolution);
  */
 static int __init setup_hrtimer_hres(char *str)
 {
-	if (!strcmp(str, "off"))
-		hrtimer_hres_enabled = 0;
-	else if (!strcmp(str, "on"))
-		hrtimer_hres_enabled = 1;
-	else
-		return 0;
-	return 1;
+	return (kstrtobool(str, &hrtimer_hres_enabled) == 0);
 }
 
 __setup("highres=", setup_hrtimer_hres);
@@ -718,7 +708,7 @@ static void clock_was_set_work(struct work_struct *work)
 static DECLARE_WORK(hrtimer_work, clock_was_set_work);
 
 /*
- * Called from timekeeping and resume code to reprogramm the hrtimer
+ * Called from timekeeping and resume code to reprogram the hrtimer
  * interrupt device on all cpus.
  */
 void clock_was_set_delayed(void)
@@ -984,7 +974,7 @@ static inline ktime_t hrtimer_update_lowres(struct hrtimer *timer, ktime_t tim,
  *		relative (HRTIMER_MODE_REL)
  */
 void hrtimer_start_range_ns(struct hrtimer *timer, ktime_t tim,
-			    unsigned long delta_ns, const enum hrtimer_mode mode)
+			    u64 delta_ns, const enum hrtimer_mode mode)
 {
 	struct hrtimer_clock_base *base, *new_base;
 	unsigned long flags;
@@ -1256,7 +1246,7 @@ static void __run_hrtimer(struct hrtimer_cpu_base *cpu_base,
 
 	/*
 	 * Note: We clear the running state after enqueue_hrtimer and
-	 * we do not reprogramm the event hardware. Happens either in
+	 * we do not reprogram the event hardware. Happens either in
 	 * hrtimer_start_range_ns() or in hrtimer_interrupt()
 	 *
 	 * Note: Because we dropped the cpu_base->lock above,
@@ -1553,7 +1543,7 @@ long hrtimer_nanosleep(struct timespec *rqtp, struct timespec __user *rmtp,
 	struct restart_block *restart;
 	struct hrtimer_sleeper t;
 	int ret = 0;
-	unsigned long slack;
+	u64 slack;
 
 	slack = current->timer_slack_ns;
 	if (dl_task(current) || rt_task(current))
@@ -1605,7 +1595,7 @@ SYSCALL_DEFINE2(nanosleep, struct timespec __user *, rqtp,
 /*
  * Functions related to boot-time initialization:
  */
-static void init_hrtimers_cpu(int cpu)
+int hrtimers_prepare_cpu(unsigned int cpu)
 {
 	struct hrtimer_cpu_base *cpu_base = &per_cpu(hrtimer_bases, cpu);
 	int i;
@@ -1617,6 +1607,7 @@ static void init_hrtimers_cpu(int cpu)
 
 	cpu_base->cpu = cpu;
 	hrtimer_init_hres(cpu_base);
+	return 0;
 }
 
 #ifdef CONFIG_HOTPLUG_CPU
@@ -1651,7 +1642,7 @@ static void migrate_hrtimer_list(struct hrtimer_clock_base *old_base,
 	}
 }
 
-static void migrate_hrtimers(int scpu)
+int hrtimers_dead_cpu(unsigned int scpu)
 {
 	struct hrtimer_cpu_base *old_base, *new_base;
 	int i;
@@ -1680,45 +1671,14 @@ static void migrate_hrtimers(int scpu)
 	/* Check, if we got expired work to do */
 	__hrtimer_peek_ahead_timers();
 	local_irq_enable();
+	return 0;
 }
 
 #endif /* CONFIG_HOTPLUG_CPU */
 
-static int hrtimer_cpu_notify(struct notifier_block *self,
-					unsigned long action, void *hcpu)
-{
-	int scpu = (long)hcpu;
-
-	switch (action) {
-
-	case CPU_UP_PREPARE:
-	case CPU_UP_PREPARE_FROZEN:
-		init_hrtimers_cpu(scpu);
-		break;
-
-#ifdef CONFIG_HOTPLUG_CPU
-	case CPU_DEAD:
-	case CPU_DEAD_FROZEN:
-		migrate_hrtimers(scpu);
-		break;
-#endif
-
-	default:
-		break;
-	}
-
-	return NOTIFY_OK;
-}
-
-static struct notifier_block hrtimers_nb = {
-	.notifier_call = hrtimer_cpu_notify,
-};
-
 void __init hrtimers_init(void)
 {
-	hrtimer_cpu_notify(&hrtimers_nb, (unsigned long)CPU_UP_PREPARE,
-			  (void *)(long)smp_processor_id());
-	register_cpu_notifier(&hrtimers_nb);
+	hrtimers_prepare_cpu(smp_processor_id());
 }
 
 /**
@@ -1729,7 +1689,7 @@ void __init hrtimers_init(void)
  * @clock:	timer clock, CLOCK_MONOTONIC or CLOCK_REALTIME
  */
 int __sched
-schedule_hrtimeout_range_clock(ktime_t *expires, unsigned long delta,
+schedule_hrtimeout_range_clock(ktime_t *expires, u64 delta,
 			       const enum hrtimer_mode mode, int clock)
 {
 	struct hrtimer_sleeper t;
@@ -1797,7 +1757,7 @@ schedule_hrtimeout_range_clock(ktime_t *expires, unsigned long delta,
  *
  * Returns 0 when the timer has expired otherwise -EINTR
  */
-int __sched schedule_hrtimeout_range(ktime_t *expires, unsigned long delta,
+int __sched schedule_hrtimeout_range(ktime_t *expires, u64 delta,
 				     const enum hrtimer_mode mode)
 {
 	return schedule_hrtimeout_range_clock(expires, delta, mode,

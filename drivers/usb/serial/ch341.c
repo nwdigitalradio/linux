@@ -358,6 +358,7 @@ static void ch341_set_termios(struct tty_struct *tty,
 	struct ch341_private *priv = usb_get_serial_port_data(port);
 	unsigned baud_rate;
 	unsigned long flags;
+	unsigned int par_flags;
 
 	baud_rate = tty_get_baud_rate(tty);
 
@@ -368,9 +369,33 @@ static void ch341_set_termios(struct tty_struct *tty,
 
 	/* Unimplemented:
 	 * (cflag & CSIZE) : data bits [5, 8]
-	 * (cflag & PARENB) : parity {NONE, EVEN, ODD}
 	 * (cflag & CSTOPB) : stop bits [1, 2]
 	 */
+
+	/* CH340 doesn't appear to support variable stop bits or data bits */
+	if (C_PARENB(tty)) {
+		if (C_PARODD(tty)) {
+			if (tty->termios.c_cflag & CMSPAR) {
+				dev_dbg(&port->dev, "parity = mark\n");
+				par_flags = 0xeb;
+			} else {
+				dev_dbg(&port->dev, "parity = odd\n");
+				par_flags = 0xcb;
+			}
+		} else {
+			if (tty->termios.c_cflag & CMSPAR) {
+				dev_dbg(&port->dev, "parity = space\n");
+				par_flags = 0xfb;
+			} else {
+				dev_dbg(&port->dev, "parity = even\n");
+				par_flags = 0xdb;
+			}
+		}
+	} else {
+		dev_dbg(&port->dev, "parity = none\n");
+		par_flags = 0xc3;
+	}
+	ch341_control_out(port->serial->dev, 0x9a, 0x2518, par_flags);
 
 	spin_lock_irqsave(&priv->lock, flags);
 	if (C_BAUD(tty) == B0)
@@ -385,7 +410,7 @@ static void ch341_set_termios(struct tty_struct *tty,
 static void ch341_break_ctl(struct tty_struct *tty, int break_state)
 {
 	const uint16_t ch341_break_reg =
-		CH341_REG_BREAK1 | ((uint16_t) CH341_REG_BREAK2 << 8);
+			((uint16_t) CH341_REG_BREAK2 << 8) | CH341_REG_BREAK1;
 	struct usb_serial_port *port = tty->driver_data;
 	int r;
 	uint16_t reg_contents;
@@ -561,7 +586,7 @@ static int ch341_reset_resume(struct usb_serial *serial)
 	/* reconfigure ch341 serial port after bus-reset */
 	ch341_configure(serial->dev, priv);
 
-	if (test_bit(ASYNCB_INITIALIZED, &port->port.flags)) {
+	if (tty_port_initialized(&port->port)) {
 		ret = usb_submit_urb(port->interrupt_in_urb, GFP_NOIO);
 		if (ret) {
 			dev_err(&port->dev, "failed to submit interrupt urb: %d\n",

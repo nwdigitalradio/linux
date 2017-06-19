@@ -154,7 +154,7 @@ static void pscsi_tape_read_blocksize(struct se_device *dev,
 
 	buf = kzalloc(12, GFP_KERNEL);
 	if (!buf)
-		return;
+		goto out_free;
 
 	memset(cdb, 0, MAX_COMMAND_SIZE);
 	cdb[0] = MODE_SENSE;
@@ -169,9 +169,10 @@ static void pscsi_tape_read_blocksize(struct se_device *dev,
 	 * If MODE_SENSE still returns zero, set the default value to 1024.
 	 */
 	sdev->sector_size = (buf[9] << 16) | (buf[10] << 8) | (buf[11]);
+out_free:
 	if (!sdev->sector_size)
 		sdev->sector_size = 1024;
-out_free:
+
 	kfree(buf);
 }
 
@@ -314,9 +315,10 @@ static int pscsi_add_device_to_list(struct se_device *dev,
 				sd->lun, sd->queue_depth);
 	}
 
-	dev->dev_attrib.hw_block_size = sd->sector_size;
+	dev->dev_attrib.hw_block_size =
+		min_not_zero((int)sd->sector_size, 512);
 	dev->dev_attrib.hw_max_sectors =
-		min_t(int, sd->host->max_sectors, queue_max_hw_sectors(q));
+		min_not_zero(sd->host->max_sectors, queue_max_hw_sectors(q));
 	dev->dev_attrib.hw_queue_depth = sd->queue_depth;
 
 	/*
@@ -339,8 +341,10 @@ static int pscsi_add_device_to_list(struct se_device *dev,
 	/*
 	 * For TYPE_TAPE, attempt to determine blocksize with MODE_SENSE.
 	 */
-	if (sd->type == TYPE_TAPE)
+	if (sd->type == TYPE_TAPE) {
 		pscsi_tape_read_blocksize(dev, sd);
+		dev->dev_attrib.hw_block_size = sd->sector_size;
+	}
 	return 0;
 }
 
@@ -406,7 +410,7 @@ static int pscsi_create_type_disk(struct se_device *dev, struct scsi_device *sd)
 /*
  * Called with struct Scsi_Host->host_lock called.
  */
-static int pscsi_create_type_rom(struct se_device *dev, struct scsi_device *sd)
+static int pscsi_create_type_nondisk(struct se_device *dev, struct scsi_device *sd)
 	__releases(sh->host_lock)
 {
 	struct pscsi_hba_virt *phv = dev->se_hba->hba_ptr;
@@ -430,28 +434,6 @@ static int pscsi_create_type_rom(struct se_device *dev, struct scsi_device *sd)
 		phv->phv_host_id, scsi_device_type(sd->type), sh->host_no,
 		sd->channel, sd->id, sd->lun);
 
-	return 0;
-}
-
-/*
- * Called with struct Scsi_Host->host_lock called.
- */
-static int pscsi_create_type_other(struct se_device *dev,
-		struct scsi_device *sd)
-	__releases(sh->host_lock)
-{
-	struct pscsi_hba_virt *phv = dev->se_hba->hba_ptr;
-	struct Scsi_Host *sh = sd->host;
-	int ret;
-
-	spin_unlock_irq(sh->host_lock);
-	ret = pscsi_add_device_to_list(dev, sd);
-	if (ret)
-		return ret;
-
-	pr_debug("CORE_PSCSI[%d] - Added Type: %s for %d:%d:%d:%llu\n",
-		phv->phv_host_id, scsi_device_type(sd->type), sh->host_no,
-		sd->channel, sd->id, sd->lun);
 	return 0;
 }
 
@@ -542,11 +524,8 @@ static int pscsi_configure_device(struct se_device *dev)
 		case TYPE_DISK:
 			ret = pscsi_create_type_disk(dev, sd);
 			break;
-		case TYPE_ROM:
-			ret = pscsi_create_type_rom(dev, sd);
-			break;
 		default:
-			ret = pscsi_create_type_other(dev, sd);
+			ret = pscsi_create_type_nondisk(dev, sd);
 			break;
 		}
 
@@ -611,8 +590,7 @@ static void pscsi_free_device(struct se_device *dev)
 		else if (pdv->pdv_lld_host)
 			scsi_host_put(pdv->pdv_lld_host);
 
-		if ((sd->type == TYPE_DISK) || (sd->type == TYPE_ROM))
-			scsi_device_put(sd);
+		scsi_device_put(sd);
 
 		pdv->pdv_sd = NULL;
 	}
@@ -876,19 +854,19 @@ static inline struct bio *pscsi_get_bio(int nr_vecs)
 
 static sense_reason_t
 pscsi_map_sg(struct se_cmd *cmd, struct scatterlist *sgl, u32 sgl_nents,
-		enum dma_data_direction data_direction, struct bio **hbio)
+		struct request *req)
 {
 	struct pscsi_dev_virt *pdv = PSCSI_DEV(cmd->se_dev);
-	struct bio *bio = NULL, *tbio = NULL;
+	struct bio *bio = NULL;
 	struct page *page;
 	struct scatterlist *sg;
 	u32 data_len = cmd->data_length, i, len, bytes, off;
 	int nr_pages = (cmd->data_length + sgl[0].offset +
 			PAGE_SIZE - 1) >> PAGE_SHIFT;
 	int nr_vecs = 0, rc;
-	int rw = (data_direction == DMA_TO_DEVICE);
+	int rw = (cmd->data_direction == DMA_TO_DEVICE);
 
-	*hbio = NULL;
+	BUG_ON(!cmd->data_length);
 
 	pr_debug("PSCSI: nr_pages: %d\n", nr_pages);
 
@@ -922,21 +900,11 @@ pscsi_map_sg(struct se_cmd *cmd, struct scatterlist *sgl, u32 sgl_nents,
 					goto fail;
 
 				if (rw)
-					bio->bi_rw |= REQ_WRITE;
+					bio_set_op_attrs(bio, REQ_OP_WRITE, 0);
 
 				pr_debug("PSCSI: Allocated bio: %p,"
 					" dir: %s nr_vecs: %d\n", bio,
 					(rw) ? "rw" : "r", nr_vecs);
-				/*
-				 * Set *hbio pointer to handle the case:
-				 * nr_pages > BIO_MAX_PAGES, where additional
-				 * bios need to be added to complete a given
-				 * command.
-				 */
-				if (!*hbio)
-					*hbio = tbio = bio;
-				else
-					tbio = tbio->bi_next = bio;
 			}
 
 			pr_debug("PSCSI: Calling bio_add_pc_page() i: %d"
@@ -955,11 +923,16 @@ pscsi_map_sg(struct se_cmd *cmd, struct scatterlist *sgl, u32 sgl_nents,
 				pr_debug("PSCSI: Reached bio->bi_vcnt max:"
 					" %d i: %d bio: %p, allocating another"
 					" bio\n", bio->bi_vcnt, i, bio);
+
+				rc = blk_rq_append_bio(req, bio);
+				if (rc) {
+					pr_err("pSCSI: failed to append bio\n");
+					goto fail;
+				}
+
 				/*
 				 * Clear the pointer so that another bio will
-				 * be allocated with pscsi_get_bio() above, the
-				 * current bio has already been set *tbio and
-				 * bio->bi_next.
+				 * be allocated with pscsi_get_bio() above.
 				 */
 				bio = NULL;
 			}
@@ -968,13 +941,16 @@ pscsi_map_sg(struct se_cmd *cmd, struct scatterlist *sgl, u32 sgl_nents,
 		}
 	}
 
+	if (bio) {
+		rc = blk_rq_append_bio(req, bio);
+		if (rc) {
+			pr_err("pSCSI: failed to append bio\n");
+			goto fail;
+		}
+	}
+
 	return 0;
 fail:
-	while (*hbio) {
-		bio = *hbio;
-		*hbio = (*hbio)->bi_next;
-		bio_endio(bio);
-	}
 	return TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
 }
 
@@ -992,11 +968,9 @@ pscsi_execute_cmd(struct se_cmd *cmd)
 {
 	struct scatterlist *sgl = cmd->t_data_sg;
 	u32 sgl_nents = cmd->t_data_nents;
-	enum dma_data_direction data_direction = cmd->data_direction;
 	struct pscsi_dev_virt *pdv = PSCSI_DEV(cmd->se_dev);
 	struct pscsi_plugin_task *pt;
 	struct request *req;
-	struct bio *hbio;
 	sense_reason_t ret;
 
 	/*
@@ -1012,31 +986,21 @@ pscsi_execute_cmd(struct se_cmd *cmd)
 	memcpy(pt->pscsi_cdb, cmd->t_task_cdb,
 		scsi_command_size(cmd->t_task_cdb));
 
-	if (!sgl) {
-		req = blk_get_request(pdv->pdv_sd->request_queue,
-				(data_direction == DMA_TO_DEVICE),
-				GFP_KERNEL);
-		if (IS_ERR(req)) {
-			pr_err("PSCSI: blk_get_request() failed\n");
-			ret = TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
-			goto fail;
-		}
+	req = blk_get_request(pdv->pdv_sd->request_queue,
+			(cmd->data_direction == DMA_TO_DEVICE),
+			GFP_KERNEL);
+	if (IS_ERR(req)) {
+		pr_err("PSCSI: blk_get_request() failed\n");
+		ret = TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
+		goto fail;
+	}
 
-		blk_rq_set_block_pc(req);
-	} else {
-		BUG_ON(!cmd->data_length);
+	blk_rq_set_block_pc(req);
 
-		ret = pscsi_map_sg(cmd, sgl, sgl_nents, data_direction, &hbio);
+	if (sgl) {
+		ret = pscsi_map_sg(cmd, sgl, sgl_nents, req);
 		if (ret)
-			goto fail;
-
-		req = blk_make_request(pdv->pdv_sd->request_queue, hbio,
-				       GFP_KERNEL);
-		if (IS_ERR(req)) {
-			pr_err("pSCSI: blk_make_request() failed\n");
-			ret = TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
-			goto fail_free_bio;
-		}
+			goto fail_put_request;
 	}
 
 	req->end_io = pscsi_req_done;
@@ -1057,13 +1021,8 @@ pscsi_execute_cmd(struct se_cmd *cmd)
 
 	return 0;
 
-fail_free_bio:
-	while (hbio) {
-		struct bio *bio = hbio;
-		hbio = hbio->bi_next;
-		bio_endio(bio);
-	}
-	ret = TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
+fail_put_request:
+	blk_put_request(req);
 fail:
 	kfree(pt);
 	return ret;
@@ -1088,7 +1047,6 @@ static sector_t pscsi_get_blocks(struct se_device *dev)
 	if (pdv->pdv_bd && pdv->pdv_bd->bd_part)
 		return pdv->pdv_bd->bd_part->nr_sects;
 
-	dump_stack();
 	return 0;
 }
 

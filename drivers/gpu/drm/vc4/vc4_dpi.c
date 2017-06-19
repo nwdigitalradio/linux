@@ -208,14 +208,6 @@ static int vc4_dpi_connector_get_modes(struct drm_connector *connector)
 	return 0;
 }
 
-static struct drm_encoder *
-vc4_dpi_connector_best_encoder(struct drm_connector *connector)
-{
-	struct vc4_dpi_connector *dpi_connector =
-		to_vc4_dpi_connector(connector);
-	return dpi_connector->encoder;
-}
-
 static const struct drm_connector_funcs vc4_dpi_connector_funcs = {
 	.dpms = drm_atomic_helper_connector_dpms,
 	.detect = vc4_dpi_connector_detect,
@@ -228,7 +220,6 @@ static const struct drm_connector_funcs vc4_dpi_connector_funcs = {
 
 static const struct drm_connector_helper_funcs vc4_dpi_connector_helper_funcs = {
 	.get_modes = vc4_dpi_connector_get_modes,
-	.best_encoder = vc4_dpi_connector_best_encoder,
 };
 
 static struct drm_connector *vc4_dpi_connector_init(struct drm_device *dev,
@@ -455,7 +446,7 @@ static int vc4_dpi_bind(struct device *dev, struct device *master, void *data)
 	dpi->panel = vc4_dpi_get_panel(dev);
 
 	drm_encoder_init(drm, dpi->encoder, &vc4_dpi_encoder_funcs,
-			 DRM_MODE_ENCODER_DPI);
+			 DRM_MODE_ENCODER_DPI, NULL);
 	drm_encoder_helper_add(dpi->encoder, &vc4_dpi_encoder_helper_funcs);
 
 	dpi->connector = vc4_dpi_connector_init(drm, dpi);

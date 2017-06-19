@@ -32,20 +32,6 @@
 #include "vc4_regs.h"
 #include "vc4_trace.h"
 
-#ifdef CONFIG_DEBUG_FS
-int vc4_gem_exec_debugfs(struct seq_file *m, void *unused)
-{
-	struct drm_info_node *node = (struct drm_info_node *)m->private;
-	struct drm_device *dev = node->minor->dev;
-	struct vc4_dev *vc4 = to_vc4_dev(dev);
-
-	seq_printf(m, "Emitted  seqno:   0x%016llx\n", vc4->emit_seqno);
-	seq_printf(m, "Finished seqno:   0x%016llx\n", vc4->finished_seqno);
-
-	return 0;
-}
-#endif /* CONFIG_DEBUG_FS */
-
 static void
 vc4_queue_hangcheck(struct drm_device *dev)
 {
@@ -608,12 +594,14 @@ vc4_get_bcl(struct drm_device *dev, struct vc4_exec_info *exec)
 					  args->shader_rec_count);
 	struct vc4_bo *bo;
 
-	if (uniforms_offset < shader_rec_offset ||
+	if (shader_rec_offset < args->bin_cl_size ||
+	    uniforms_offset < shader_rec_offset ||
 	    exec_size < uniforms_offset ||
 	    args->shader_rec_count >= (UINT_MAX /
 					  sizeof(struct vc4_shader_state)) ||
 	    temp_size < exec_size) {
 		DRM_ERROR("overflow in exec arguments\n");
+		ret = -EINVAL;
 		goto fail;
 	}
 
@@ -707,6 +695,7 @@ static void
 vc4_complete_exec(struct drm_device *dev, struct vc4_exec_info *exec)
 {
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
+	unsigned long irqflags;
 	unsigned i;
 
 	if (exec->bo) {
@@ -721,6 +710,11 @@ vc4_complete_exec(struct drm_device *dev, struct vc4_exec_info *exec)
 		list_del(&bo->unref_head);
 		drm_gem_object_unreference_unlocked(&bo->base.base);
 	}
+
+	/* Free up the allocation of any bin slots we used. */
+	spin_lock_irqsave(&vc4->job_lock, irqflags);
+	vc4->bin_alloc_used &= ~exec->bin_slots;
+	spin_unlock_irqrestore(&vc4->job_lock, irqflags);
 
 	mutex_lock(&vc4->power_lock);
 	if (--vc4->power_refcount == 0) {
@@ -843,7 +837,7 @@ vc4_wait_bo_ioctl(struct drm_device *dev, void *data,
 	if (args->pad != 0)
 		return -EINVAL;
 
-	gem_obj = drm_gem_object_lookup(dev, file_priv, args->handle);
+	gem_obj = drm_gem_object_lookup(file_priv, args->handle);
 	if (!gem_obj) {
 		DRM_ERROR("Failed to look up GEM BO %d\n", args->handle);
 		return -EINVAL;
@@ -963,9 +957,9 @@ vc4_gem_destroy(struct drm_device *dev)
 	/* V3D should already have disabled its interrupt and cleared
 	 * the overflow allocation registers.  Now free the object.
 	 */
-	if (vc4->overflow_mem) {
-		drm_gem_object_unreference_unlocked(&vc4->overflow_mem->base.base);
-		vc4->overflow_mem = NULL;
+	if (vc4->bin_bo) {
+		drm_gem_object_unreference_unlocked(&vc4->bin_bo->base.base);
+		vc4->bin_bo = NULL;
 	}
 
 	if (vc4->hang_state)

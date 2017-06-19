@@ -162,7 +162,7 @@ static void sctp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	skb->network_header   = saveip;
 	skb->transport_header = savesctp;
 	if (!sk) {
-		ICMP6_INC_STATS_BH(net, idev, ICMP6_MIB_INERRORS);
+		__ICMP6_INC_STATS(net, idev, ICMP6_MIB_INERRORS);
 		goto out;
 	}
 
@@ -198,7 +198,7 @@ static void sctp_v6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 	}
 
 out_unlock:
-	sctp_err_finish(sk, asoc);
+	sctp_err_finish(sk, transport);
 out:
 	if (likely(idev != NULL))
 		in6_dev_put(idev);
@@ -222,7 +222,8 @@ static int sctp_v6_xmit(struct sk_buff *skb, struct sctp_transport *transport)
 	SCTP_INC_STATS(sock_net(sk), SCTP_MIB_OUTSCTPPACKS);
 
 	rcu_read_lock();
-	res = ip6_xmit(sk, skb, fl6, rcu_dereference(np->opt), np->tclass);
+	res = ip6_xmit(sk, skb, fl6, sk->sk_mark, rcu_dereference(np->opt),
+		       np->tclass);
 	rcu_read_unlock();
 	return res;
 }
@@ -239,12 +240,10 @@ static void sctp_v6_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
 	struct sctp_bind_addr *bp;
 	struct ipv6_pinfo *np = inet6_sk(sk);
 	struct sctp_sockaddr_entry *laddr;
-	union sctp_addr *baddr = NULL;
 	union sctp_addr *daddr = &t->ipaddr;
 	union sctp_addr dst_saddr;
 	struct in6_addr *final_p, final;
 	__u8 matchlen = 0;
-	__u8 bmatchlen;
 	sctp_scope_t scope;
 
 	memset(fl6, 0, sizeof(struct flowi6));
@@ -311,23 +310,37 @@ static void sctp_v6_get_dst(struct sctp_transport *t, union sctp_addr *saddr,
 	 */
 	rcu_read_lock();
 	list_for_each_entry_rcu(laddr, &bp->address_list, list) {
-		if (!laddr->valid)
+		struct dst_entry *bdst;
+		__u8 bmatchlen;
+
+		if (!laddr->valid ||
+		    laddr->state != SCTP_ADDR_SRC ||
+		    laddr->a.sa.sa_family != AF_INET6 ||
+		    scope > sctp_scope(&laddr->a))
 			continue;
-		if ((laddr->state == SCTP_ADDR_SRC) &&
-		    (laddr->a.sa.sa_family == AF_INET6) &&
-		    (scope <= sctp_scope(&laddr->a))) {
-			bmatchlen = sctp_v6_addr_match_len(daddr, &laddr->a);
-			if (!baddr || (matchlen < bmatchlen)) {
-				baddr = &laddr->a;
-				matchlen = bmatchlen;
-			}
-		}
-	}
-	if (baddr) {
-		fl6->saddr = baddr->v6.sin6_addr;
-		fl6->fl6_sport = baddr->v6.sin6_port;
+
+		fl6->saddr = laddr->a.v6.sin6_addr;
+		fl6->fl6_sport = laddr->a.v6.sin6_port;
 		final_p = fl6_update_dst(fl6, rcu_dereference(np->opt), &final);
-		dst = ip6_dst_lookup_flow(sk, fl6, final_p);
+		bdst = ip6_dst_lookup_flow(sk, fl6, final_p);
+
+		if (!IS_ERR(bdst) &&
+		    ipv6_chk_addr(dev_net(bdst->dev),
+				  &laddr->a.v6.sin6_addr, bdst->dev, 1)) {
+			if (!IS_ERR_OR_NULL(dst))
+				dst_release(dst);
+			dst = bdst;
+			break;
+		}
+
+		bmatchlen = sctp_v6_addr_match_len(daddr, &laddr->a);
+		if (matchlen > bmatchlen)
+			continue;
+
+		if (!IS_ERR_OR_NULL(dst))
+			dst_release(dst);
+		dst = bdst;
+		matchlen = bmatchlen;
 	}
 	rcu_read_unlock();
 
@@ -420,6 +433,7 @@ static void sctp_v6_from_skb(union sctp_addr *addr, struct sk_buff *skb,
 	addr->v6.sin6_flowinfo = 0; /* FIXME */
 	addr->v6.sin6_scope_id = ((struct inet6_skb_parm *)skb->cb)->iif;
 
+	/* Always called on head skb, so this is safe */
 	sh = sctp_hdr(skb);
 	if (is_saddr) {
 		*port  = sh->source;
@@ -559,6 +573,7 @@ static int sctp_v6_is_any(const union sctp_addr *addr)
 static int sctp_v6_available(union sctp_addr *addr, struct sctp_sock *sp)
 {
 	int type;
+	struct net *net = sock_net(&sp->inet.sk);
 	const struct in6_addr *in6 = (const struct in6_addr *)&addr->v6.sin6_addr;
 
 	type = ipv6_addr_type(in6);
@@ -573,7 +588,8 @@ static int sctp_v6_available(union sctp_addr *addr, struct sctp_sock *sp)
 	if (!(type & IPV6_ADDR_UNICAST))
 		return 0;
 
-	return ipv6_chk_addr(sock_net(&sp->inet.sk), in6, NULL, 0);
+	return sp->inet.freebind || net->ipv6.sysctl.ip_nonlocal_bind ||
+		ipv6_chk_addr(net, in6, NULL, 0);
 }
 
 /* This function checks if the address is a valid address to be used for
@@ -662,6 +678,9 @@ static struct sock *sctp_v6_create_accept_sk(struct sock *sk,
 	newnp = inet6_sk(newsk);
 
 	memcpy(newnp, np, sizeof(struct ipv6_pinfo));
+	newnp->ipv6_mc_list = NULL;
+	newnp->ipv6_ac_list = NULL;
+	newnp->ipv6_fl_list = NULL;
 
 	rcu_read_lock();
 	opt = rcu_dereference(np->opt);
@@ -710,8 +729,7 @@ static int sctp_v6_addr_to_user(struct sctp_sock *sp, union sctp_addr *addr)
 /* Where did this skb come from?  */
 static int sctp_v6_skb_iif(const struct sk_buff *skb)
 {
-	struct inet6_skb_parm *opt = (struct inet6_skb_parm *) skb->cb;
-	return opt->iif;
+	return IP6CB(skb)->iif;
 }
 
 /* Was this packet marked by Explicit Congestion Notification? */
@@ -780,15 +798,14 @@ static void sctp_inet6_skb_msgname(struct sk_buff *skb, char *msgname,
 	if (ip_hdr(skb)->version == 4) {
 		addr->v4.sin_family = AF_INET;
 		addr->v4.sin_port = sh->source;
-		addr->v4.sin_addr.s_addr =  ip_hdr(skb)->saddr;
+		addr->v4.sin_addr.s_addr = ip_hdr(skb)->saddr;
 	} else {
 		addr->v6.sin6_family = AF_INET6;
 		addr->v6.sin6_flowinfo = 0;
 		addr->v6.sin6_port = sh->source;
 		addr->v6.sin6_addr = ipv6_hdr(skb)->saddr;
 		if (ipv6_addr_type(&addr->v6.sin6_addr) & IPV6_ADDR_LINKLOCAL) {
-			struct sctp_ulpevent *ev = sctp_skb2event(skb);
-			addr->v6.sin6_scope_id = ev->iif;
+			addr->v6.sin6_scope_id = sctp_v6_skb_iif(skb);
 		}
 	}
 
@@ -955,7 +972,7 @@ static const struct proto_ops inet6_seqpacket_ops = {
 	.setsockopt	   = sock_common_setsockopt,
 	.getsockopt	   = sock_common_getsockopt,
 	.sendmsg	   = inet_sendmsg,
-	.recvmsg	   = sock_common_recvmsg,
+	.recvmsg	   = inet_recvmsg,
 	.mmap		   = sock_no_mmap,
 #ifdef CONFIG_COMPAT
 	.compat_setsockopt = compat_sock_common_setsockopt,

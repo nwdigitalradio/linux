@@ -11,11 +11,9 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/irq.h>
-#include <linux/module.h>
 #include <linux/reboot.h>
 #include <linux/serial_reg.h>
 #include <linux/serial_8250.h>
-#include <linux/reboot.h>
 
 #include <asm/ce4100.h>
 #include <asm/prom.h>
@@ -91,7 +89,7 @@ static void ce4100_mem_serial_out(struct uart_port *p, int offset, int value)
 }
 
 static void ce4100_serial_fixup(int port, struct uart_port *up,
-	unsigned short *capabilites)
+	u32 *capabilites)
 {
 #ifdef CONFIG_EARLY_PRINTK
 	/*

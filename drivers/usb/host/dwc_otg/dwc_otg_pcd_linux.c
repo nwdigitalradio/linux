@@ -212,12 +212,11 @@ static struct usb_request *dwc_otg_pcd_alloc_request(struct usb_ep *ep,
 		DWC_WARN("%s() %s\n", __func__, "Invalid EP!\n");
 		return 0;
 	}
-	usb_req = kmalloc(sizeof(*usb_req), gfp_flags);
+	usb_req = kzalloc(sizeof(*usb_req), gfp_flags);
 	if (0 == usb_req) {
 		DWC_WARN("%s() %s\n", __func__, "request allocation failed!\n");
 		return 0;
 	}
-	memset(usb_req, 0, sizeof(*usb_req));
 	usb_req->dma = DWC_DMA_ADDR_INVALID;
 
 	return usb_req;
@@ -271,6 +270,7 @@ static void *dwc_otg_pcd_alloc_buffer(struct usb_ep *usb_ep, unsigned bytes,
 	}
 
 	buf = dma_alloc_coherent(NULL, bytes, dma, gfp_flags);
+	WARN_ON(!buf);
 
 	/* Check dword alignment */
 	if (((int)buf & 0x3UL) != 0) {
@@ -1207,7 +1207,7 @@ int pcd_init(dwc_bus_dev_t *_dev)
 
 	DWC_DEBUGPL(DBG_PCDV, "%s(%p) otg_dev=%p\n", __func__, _dev, otg_dev);
 
-	otg_dev->pcd = dwc_otg_pcd_init(otg_dev->core_if);
+	otg_dev->pcd = dwc_otg_pcd_init(otg_dev);
 
 	if (!otg_dev->pcd) {
 		DWC_ERROR("dwc_otg_pcd_init failed\n");

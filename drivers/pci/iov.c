@@ -113,7 +113,7 @@ resource_size_t pci_iov_resource_size(struct pci_dev *dev, int resno)
 	return dev->sriov->barsz[resno - PCI_IOV_RESOURCES];
 }
 
-static int virtfn_add(struct pci_dev *dev, int id, int reset)
+int pci_iov_add_virtfn(struct pci_dev *dev, int id, int reset)
 {
 	int i;
 	int rc = -ENOMEM;
@@ -136,7 +136,10 @@ static int virtfn_add(struct pci_dev *dev, int id, int reset)
 	virtfn->devfn = pci_iov_virtfn_devfn(dev, id);
 	virtfn->vendor = dev->vendor;
 	pci_read_config_word(dev, iov->pos + PCI_SRIOV_VF_DID, &virtfn->device);
-	pci_setup_device(virtfn);
+	rc = pci_setup_device(virtfn);
+	if (rc)
+		goto failed0;
+
 	virtfn->dev.parent = dev->dev.parent;
 	virtfn->physfn = pci_dev_get(dev);
 	virtfn->is_virtfn = 1;
@@ -188,7 +191,7 @@ failed:
 	return rc;
 }
 
-static void virtfn_remove(struct pci_dev *dev, int id, int reset)
+void pci_iov_remove_virtfn(struct pci_dev *dev, int id, int reset)
 {
 	char buf[VIRTFN_ID_LEN];
 	struct pci_dev *virtfn;
@@ -303,13 +306,6 @@ static int sriov_enable(struct pci_dev *dev, int nr_virtfn)
 			return rc;
 	}
 
-	pci_iov_set_numvfs(dev, nr_virtfn);
-	iov->ctrl |= PCI_SRIOV_CTRL_VFE | PCI_SRIOV_CTRL_MSE;
-	pci_cfg_access_lock(dev);
-	pci_write_config_word(dev, iov->pos + PCI_SRIOV_CTRL, iov->ctrl);
-	msleep(100);
-	pci_cfg_access_unlock(dev);
-
 	iov->initial_VFs = initial;
 	if (nr_virtfn < initial)
 		initial = nr_virtfn;
@@ -320,8 +316,15 @@ static int sriov_enable(struct pci_dev *dev, int nr_virtfn)
 		goto err_pcibios;
 	}
 
+	pci_iov_set_numvfs(dev, nr_virtfn);
+	iov->ctrl |= PCI_SRIOV_CTRL_VFE | PCI_SRIOV_CTRL_MSE;
+	pci_cfg_access_lock(dev);
+	pci_write_config_word(dev, iov->pos + PCI_SRIOV_CTRL, iov->ctrl);
+	msleep(100);
+	pci_cfg_access_unlock(dev);
+
 	for (i = 0; i < initial; i++) {
-		rc = virtfn_add(dev, i, 0);
+		rc = pci_iov_add_virtfn(dev, i, 0);
 		if (rc)
 			goto failed;
 	}
@@ -333,7 +336,7 @@ static int sriov_enable(struct pci_dev *dev, int nr_virtfn)
 
 failed:
 	while (i--)
-		virtfn_remove(dev, i, 0);
+		pci_iov_remove_virtfn(dev, i, 0);
 
 	pcibios_sriov_disable(dev);
 err_pcibios:
@@ -359,7 +362,7 @@ static void sriov_disable(struct pci_dev *dev)
 		return;
 
 	for (i = 0; i < iov->num_VFs; i++)
-		virtfn_remove(dev, i, 0);
+		pci_iov_remove_virtfn(dev, i, 0);
 
 	pcibios_sriov_disable(dev);
 
@@ -386,10 +389,6 @@ static int sriov_init(struct pci_dev *dev, int pos)
 	struct pci_sriov *iov;
 	struct resource *res;
 	struct pci_dev *pdev;
-
-	if (pci_pcie_type(dev) != PCI_EXP_TYPE_RC_END &&
-	    pci_pcie_type(dev) != PCI_EXP_TYPE_ENDPOINT)
-		return -ENODEV;
 
 	pci_read_config_word(dev, pos + PCI_SRIOV_CTRL, &ctrl);
 	if (ctrl & PCI_SRIOV_CTRL_VFE) {
@@ -555,21 +554,61 @@ void pci_iov_release(struct pci_dev *dev)
 }
 
 /**
- * pci_iov_resource_bar - get position of the SR-IOV BAR
+ * pci_iov_update_resource - update a VF BAR
  * @dev: the PCI device
  * @resno: the resource number
  *
- * Returns position of the BAR encapsulated in the SR-IOV capability.
+ * Update a VF BAR in the SR-IOV capability of a PF.
  */
-int pci_iov_resource_bar(struct pci_dev *dev, int resno)
+void pci_iov_update_resource(struct pci_dev *dev, int resno)
 {
-	if (resno < PCI_IOV_RESOURCES || resno > PCI_IOV_RESOURCE_END)
-		return 0;
+	struct pci_sriov *iov = dev->is_physfn ? dev->sriov : NULL;
+	struct resource *res = dev->resource + resno;
+	int vf_bar = resno - PCI_IOV_RESOURCES;
+	struct pci_bus_region region;
+	u16 cmd;
+	u32 new;
+	int reg;
 
-	BUG_ON(!dev->is_physfn);
+	/*
+	 * The generic pci_restore_bars() path calls this for all devices,
+	 * including VFs and non-SR-IOV devices.  If this is not a PF, we
+	 * have nothing to do.
+	 */
+	if (!iov)
+		return;
 
-	return dev->sriov->pos + PCI_SRIOV_BAR +
-		4 * (resno - PCI_IOV_RESOURCES);
+	pci_read_config_word(dev, iov->pos + PCI_SRIOV_CTRL, &cmd);
+	if ((cmd & PCI_SRIOV_CTRL_VFE) && (cmd & PCI_SRIOV_CTRL_MSE)) {
+		dev_WARN(&dev->dev, "can't update enabled VF BAR%d %pR\n",
+			 vf_bar, res);
+		return;
+	}
+
+	/*
+	 * Ignore unimplemented BARs, unused resource slots for 64-bit
+	 * BARs, and non-movable resources, e.g., those described via
+	 * Enhanced Allocation.
+	 */
+	if (!res->flags)
+		return;
+
+	if (res->flags & IORESOURCE_UNSET)
+		return;
+
+	if (res->flags & IORESOURCE_PCI_FIXED)
+		return;
+
+	pcibios_resource_to_bus(dev->bus, &region, res);
+	new = region.start;
+	new |= res->flags & ~PCI_BASE_ADDRESS_MEM_MASK;
+
+	reg = iov->pos + PCI_SRIOV_BAR + 4 * vf_bar;
+	pci_write_config_dword(dev, reg, new);
+	if (res->flags & IORESOURCE_MEM_64) {
+		new = region.start >> 16 >> 16;
+		pci_write_config_dword(dev, reg + 4, new);
+	}
 }
 
 resource_size_t __weak pcibios_iov_resource_alignment(struct pci_dev *dev,

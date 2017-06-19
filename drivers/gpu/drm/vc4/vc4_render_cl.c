@@ -178,8 +178,7 @@ static void emit_tile(struct vc4_exec_info *exec,
 
 	if (has_bin) {
 		rcl_u8(setup, VC4_PACKET_BRANCH_TO_SUB_LIST);
-		rcl_u32(setup, (exec->tile_bo->paddr +
-				exec->tile_alloc_offset +
+		rcl_u32(setup, (exec->tile_alloc_offset +
 				(y * exec->bin_tiles_x + x) * 32));
 	}
 
@@ -461,7 +460,7 @@ static int vc4_rcl_surface_setup(struct vc4_exec_info *exec,
 		}
 
 		ret = vc4_full_res_bounds_check(exec, *obj, surf);
-		if (!ret)
+		if (ret)
 			return ret;
 
 		return 0;

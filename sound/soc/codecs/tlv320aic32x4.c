@@ -828,12 +828,14 @@ static struct snd_soc_codec_driver soc_codec_dev_aic32x4 = {
 	.set_bias_level = aic32x4_set_bias_level,
 	.suspend_bias_off = true,
 
-	.controls = aic32x4_snd_controls,
-	.num_controls = ARRAY_SIZE(aic32x4_snd_controls),
-	.dapm_widgets = aic32x4_dapm_widgets,
-	.num_dapm_widgets = ARRAY_SIZE(aic32x4_dapm_widgets),
-	.dapm_routes = aic32x4_dapm_routes,
-	.num_dapm_routes = ARRAY_SIZE(aic32x4_dapm_routes),
+	.component_driver = {
+		.controls		= aic32x4_snd_controls,
+		.num_controls		= ARRAY_SIZE(aic32x4_snd_controls),
+		.dapm_widgets		= aic32x4_dapm_widgets,
+		.num_dapm_widgets	= ARRAY_SIZE(aic32x4_dapm_widgets),
+		.dapm_routes		= aic32x4_dapm_routes,
+		.num_dapm_routes	= ARRAY_SIZE(aic32x4_dapm_routes),
+	},
 };
 
 static int aic32x4_parse_dt(struct aic32x4_priv *aic32x4,
@@ -1081,7 +1083,6 @@ int aic32x4_remove(struct device *dev)
 
 	return 0;
 }
-
 EXPORT_SYMBOL(aic32x4_remove);
 
 MODULE_DESCRIPTION("ASoC tlv320aic32x4 codec driver");

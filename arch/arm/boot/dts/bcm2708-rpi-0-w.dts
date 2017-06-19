@@ -3,7 +3,6 @@
 #include "bcm2708.dtsi"
 
 / {
-	compatible = "brcm,bcm2708";
 	model = "Raspberry Pi Zero W";
 };
 
@@ -40,7 +39,7 @@
 
 	sdio_pins: sdio_pins {
 		brcm,pins = <34 35 36 37 38 39>;
-		brcm,function = <7 7 7 7 7 7>; /* ALT3 = SD1 */
+		brcm,function = <7>; /* ALT3 = SD1 */
 		brcm,pull = <0 2 2 2 2 2>;
 	};
 
@@ -173,7 +172,6 @@
 / {
 	__overrides__ {
 		uart0 = <&uart0>,"status";
-		uart0_clkrate = <&clk_uart0>,"clock-frequency:0";
 		uart1 = <&uart1>,"status";
 		i2s = <&i2s>,"status";
 		spi = <&spi0>,"status";
@@ -183,7 +181,6 @@
 		i2c0_baudrate = <&i2c0>,"clock-frequency:0";
 		i2c1_baudrate = <&i2c1>,"clock-frequency:0";
 		i2c2_baudrate = <&i2c2>,"clock-frequency:0";
-		core_freq = <&clk_core>,"clock-frequency:0";
 
 		act_led_gpio = <&act_led>,"gpios:4";
 		act_led_activelow = <&act_led>,"gpios:8";

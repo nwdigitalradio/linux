@@ -5,7 +5,7 @@
  *  Copyright (C) 1997-1999 Jakub Jelinek (jj@sunsite.mff.cuni.cz)
  */
  
-#include <linux/module.h>
+#include <linux/extable.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/string.h>
@@ -347,10 +347,12 @@ void update_mmu_cache(struct vm_area_struct *vma, unsigned long address, pte_t *
 
 #if defined(CONFIG_HUGETLB_PAGE) || defined(CONFIG_TRANSPARENT_HUGEPAGE)
 	if ((mm->context.hugetlb_pte_count || mm->context.thp_pte_count) &&
-	    is_hugetlb_pte(pte))
+	    is_hugetlb_pte(pte)) {
+		/* We are fabricating 8MB pages using 4MB real hw pages.  */
+		pte_val(pte) |= (address & (1UL << REAL_HPAGE_SHIFT));
 		__update_mmu_tsb_insert(mm, MM_TSB_HUGE, REAL_HPAGE_SHIFT,
 					address, pte_val(pte));
-	else
+	} else
 #endif
 		__update_mmu_tsb_insert(mm, MM_TSB_BASE, PAGE_SHIFT,
 					address, pte_val(pte));
@@ -656,10 +658,58 @@ EXPORT_SYMBOL(__flush_dcache_range);
 
 /* get_new_mmu_context() uses "cache + 1".  */
 DEFINE_SPINLOCK(ctx_alloc_lock);
-unsigned long tlb_context_cache = CTX_FIRST_VERSION - 1;
+unsigned long tlb_context_cache = CTX_FIRST_VERSION;
 #define MAX_CTX_NR	(1UL << CTX_NR_BITS)
 #define CTX_BMAP_SLOTS	BITS_TO_LONGS(MAX_CTX_NR)
 DECLARE_BITMAP(mmu_context_bmap, MAX_CTX_NR);
+DEFINE_PER_CPU(struct mm_struct *, per_cpu_secondary_mm) = {0};
+
+static void mmu_context_wrap(void)
+{
+	unsigned long old_ver = tlb_context_cache & CTX_VERSION_MASK;
+	unsigned long new_ver, new_ctx, old_ctx;
+	struct mm_struct *mm;
+	int cpu;
+
+	bitmap_zero(mmu_context_bmap, 1 << CTX_NR_BITS);
+
+	/* Reserve kernel context */
+	set_bit(0, mmu_context_bmap);
+
+	new_ver = (tlb_context_cache & CTX_VERSION_MASK) + CTX_FIRST_VERSION;
+	if (unlikely(new_ver == 0))
+		new_ver = CTX_FIRST_VERSION;
+	tlb_context_cache = new_ver;
+
+	/*
+	 * Make sure that any new mm that are added into per_cpu_secondary_mm,
+	 * are going to go through get_new_mmu_context() path.
+	 */
+	mb();
+
+	/*
+	 * Updated versions to current on those CPUs that had valid secondary
+	 * contexts
+	 */
+	for_each_online_cpu(cpu) {
+		/*
+		 * If a new mm is stored after we took this mm from the array,
+		 * it will go into get_new_mmu_context() path, because we
+		 * already bumped the version in tlb_context_cache.
+		 */
+		mm = per_cpu(per_cpu_secondary_mm, cpu);
+
+		if (unlikely(!mm || mm == &init_mm))
+			continue;
+
+		old_ctx = mm->context.sparc64_ctx_val;
+		if (likely((old_ctx & CTX_VERSION_MASK) == old_ver)) {
+			new_ctx = (old_ctx & ~CTX_VERSION_MASK) | new_ver;
+			set_bit(new_ctx & CTX_NR_MASK, mmu_context_bmap);
+			mm->context.sparc64_ctx_val = new_ctx;
+		}
+	}
+}
 
 /* Caller does TLB context flushing on local CPU if necessary.
  * The caller also ensures that CTX_VALID(mm->context) is false.
@@ -675,48 +725,30 @@ void get_new_mmu_context(struct mm_struct *mm)
 {
 	unsigned long ctx, new_ctx;
 	unsigned long orig_pgsz_bits;
-	int new_version;
 
 	spin_lock(&ctx_alloc_lock);
+retry:
+	/* wrap might have happened, test again if our context became valid */
+	if (unlikely(CTX_VALID(mm->context)))
+		goto out;
 	orig_pgsz_bits = (mm->context.sparc64_ctx_val & CTX_PGSZ_MASK);
 	ctx = (tlb_context_cache + 1) & CTX_NR_MASK;
 	new_ctx = find_next_zero_bit(mmu_context_bmap, 1 << CTX_NR_BITS, ctx);
-	new_version = 0;
 	if (new_ctx >= (1 << CTX_NR_BITS)) {
 		new_ctx = find_next_zero_bit(mmu_context_bmap, ctx, 1);
 		if (new_ctx >= ctx) {
-			int i;
-			new_ctx = (tlb_context_cache & CTX_VERSION_MASK) +
-				CTX_FIRST_VERSION;
-			if (new_ctx == 1)
-				new_ctx = CTX_FIRST_VERSION;
-
-			/* Don't call memset, for 16 entries that's just
-			 * plain silly...
-			 */
-			mmu_context_bmap[0] = 3;
-			mmu_context_bmap[1] = 0;
-			mmu_context_bmap[2] = 0;
-			mmu_context_bmap[3] = 0;
-			for (i = 4; i < CTX_BMAP_SLOTS; i += 4) {
-				mmu_context_bmap[i + 0] = 0;
-				mmu_context_bmap[i + 1] = 0;
-				mmu_context_bmap[i + 2] = 0;
-				mmu_context_bmap[i + 3] = 0;
-			}
-			new_version = 1;
-			goto out;
+			mmu_context_wrap();
+			goto retry;
 		}
 	}
+	if (mm->context.sparc64_ctx_val)
+		cpumask_clear(mm_cpumask(mm));
 	mmu_context_bmap[new_ctx>>6] |= (1UL << (new_ctx & 63));
 	new_ctx |= (tlb_context_cache & CTX_VERSION_MASK);
-out:
 	tlb_context_cache = new_ctx;
 	mm->context.sparc64_ctx_val = new_ctx | orig_pgsz_bits;
+out:
 	spin_unlock(&ctx_alloc_lock);
-
-	if (unlikely(new_version))
-		smp_new_mmu_context_version();
 }
 
 static int numa_enabled = 1;
@@ -1215,7 +1247,7 @@ out:
 	return -1;
 }
 
-static int find_best_numa_node_for_mlgroup(struct mdesc_mlgroup *grp)
+static int __init find_best_numa_node_for_mlgroup(struct mdesc_mlgroup *grp)
 {
 	int i;
 
@@ -1228,8 +1260,8 @@ static int find_best_numa_node_for_mlgroup(struct mdesc_mlgroup *grp)
 	return i;
 }
 
-static void find_numa_latencies_for_group(struct mdesc_handle *md, u64 grp,
-					  int index)
+static void __init find_numa_latencies_for_group(struct mdesc_handle *md,
+						 u64 grp, int index)
 {
 	u64 arc;
 
@@ -1493,7 +1525,7 @@ bool kern_addr_valid(unsigned long addr)
 	if ((long)addr < 0L) {
 		unsigned long pa = __pa(addr);
 
-		if ((addr >> max_phys_bits) != 0UL)
+		if ((pa >> max_phys_bits) != 0UL)
 			return false;
 
 		return pfn_valid(pa >> PAGE_SHIFT);
@@ -1815,6 +1847,7 @@ static void __init setup_page_offset(void)
 			max_phys_bits = 47;
 			break;
 		case SUN4V_CHIP_SPARC_M7:
+		case SUN4V_CHIP_SPARC_SN:
 		default:
 			/* M7 and later support 52-bit virtual addresses.  */
 			sparc64_va_hole_top =    0xfff8000000000000UL;
@@ -2032,6 +2065,7 @@ static void __init sun4v_linear_pte_xor_finalize(void)
 	 */
 	switch (sun4v_chip_type) {
 	case SUN4V_CHIP_SPARC_M7:
+	case SUN4V_CHIP_SPARC_SN:
 		pagecv_flag = 0x00;
 		break;
 	default:
@@ -2134,7 +2168,6 @@ void __init paging_init(void)
 {
 	unsigned long end_pfn, shift, phys_base;
 	unsigned long real_end, i;
-	int node;
 
 	setup_page_offset();
 
@@ -2184,6 +2217,7 @@ void __init paging_init(void)
 	 */
 	switch (sun4v_chip_type) {
 	case SUN4V_CHIP_SPARC_M7:
+	case SUN4V_CHIP_SPARC_SN:
 		page_cache4v_flag = _PAGE_CP_4V;
 		break;
 	default:
@@ -2301,21 +2335,6 @@ void __init paging_init(void)
 
 	/* Setup bootmem... */
 	last_valid_pfn = end_pfn = bootmem_init(phys_base);
-
-	/* Once the OF device tree and MDESC have been setup, we know
-	 * the list of possible cpus.  Therefore we can allocate the
-	 * IRQ stacks.
-	 */
-	for_each_possible_cpu(i) {
-		node = cpu_to_node(i);
-
-		softirq_stack[i] = __alloc_bootmem_node(NODE_DATA(node),
-							THREAD_SIZE,
-							THREAD_SIZE, 0);
-		hardirq_stack[i] = __alloc_bootmem_node(NODE_DATA(node),
-							THREAD_SIZE,
-							THREAD_SIZE, 0);
-	}
 
 	kernel_physical_mapping_init();
 
@@ -2759,8 +2778,7 @@ void __flush_tlb_all(void)
 pte_t *pte_alloc_one_kernel(struct mm_struct *mm,
 			    unsigned long address)
 {
-	struct page *page = alloc_page(GFP_KERNEL | __GFP_NOTRACK |
-				       __GFP_REPEAT | __GFP_ZERO);
+	struct page *page = alloc_page(GFP_KERNEL | __GFP_NOTRACK | __GFP_ZERO);
 	pte_t *pte = NULL;
 
 	if (page)
@@ -2772,8 +2790,7 @@ pte_t *pte_alloc_one_kernel(struct mm_struct *mm,
 pgtable_t pte_alloc_one(struct mm_struct *mm,
 			unsigned long address)
 {
-	struct page *page = alloc_page(GFP_KERNEL | __GFP_NOTRACK |
-				       __GFP_REPEAT | __GFP_ZERO);
+	struct page *page = alloc_page(GFP_KERNEL | __GFP_NOTRACK | __GFP_ZERO);
 	if (!page)
 		return NULL;
 	if (!pgtable_page_ctor(page)) {
@@ -2913,17 +2930,17 @@ void hugetlb_setup(struct pt_regs *regs)
 
 static struct resource code_resource = {
 	.name	= "Kernel code",
-	.flags	= IORESOURCE_BUSY | IORESOURCE_MEM
+	.flags	= IORESOURCE_BUSY | IORESOURCE_SYSTEM_RAM
 };
 
 static struct resource data_resource = {
 	.name	= "Kernel data",
-	.flags	= IORESOURCE_BUSY | IORESOURCE_MEM
+	.flags	= IORESOURCE_BUSY | IORESOURCE_SYSTEM_RAM
 };
 
 static struct resource bss_resource = {
 	.name	= "Kernel bss",
-	.flags	= IORESOURCE_BUSY | IORESOURCE_MEM
+	.flags	= IORESOURCE_BUSY | IORESOURCE_SYSTEM_RAM
 };
 
 static inline resource_size_t compute_kern_paddr(void *addr)
@@ -2959,7 +2976,7 @@ static int __init report_memory(void)
 		res->name = "System RAM";
 		res->start = pavail[i].phys_addr;
 		res->end = pavail[i].phys_addr + pavail[i].reg_size - 1;
-		res->flags = IORESOURCE_BUSY | IORESOURCE_MEM;
+		res->flags = IORESOURCE_BUSY | IORESOURCE_SYSTEM_RAM;
 
 		if (insert_resource(&iomem_resource, res) < 0) {
 			pr_warn("Resource insertion failed.\n");

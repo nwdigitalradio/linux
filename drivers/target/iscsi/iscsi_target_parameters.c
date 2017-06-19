@@ -680,6 +680,7 @@ struct iscsi_param *iscsi_find_param_from_key(
 	pr_err("Unable to locate key \"%s\".\n", key);
 	return NULL;
 }
+EXPORT_SYMBOL(iscsi_find_param_from_key);
 
 int iscsi_extract_key_value(char *textbuf, char **key, char **value)
 {
@@ -779,22 +780,6 @@ static void iscsi_check_proposer_for_optional_reply(struct iscsi_param *param)
 			SET_PSTATE_REPLY_OPTIONAL(param);
 	} else if (IS_TYPE_NUMBER(param)) {
 		if (!strcmp(param->name, MAXRECVDATASEGMENTLENGTH))
-			SET_PSTATE_REPLY_OPTIONAL(param);
-		/*
-		 * The GlobalSAN iSCSI Initiator for MacOSX does
-		 * not respond to MaxBurstLength, FirstBurstLength,
-		 * DefaultTime2Wait or DefaultTime2Retain parameter keys.
-		 * So, we set them to 'reply optional' here, and assume the
-		 * the defaults from iscsi_parameters.h if the initiator
-		 * is not RFC compliant and the keys are not negotiated.
-		 */
-		if (!strcmp(param->name, MAXBURSTLENGTH))
-			SET_PSTATE_REPLY_OPTIONAL(param);
-		if (!strcmp(param->name, FIRSTBURSTLENGTH))
-			SET_PSTATE_REPLY_OPTIONAL(param);
-		if (!strcmp(param->name, DEFAULTTIME2WAIT))
-			SET_PSTATE_REPLY_OPTIONAL(param);
-		if (!strcmp(param->name, DEFAULTTIME2RETAIN))
 			SET_PSTATE_REPLY_OPTIONAL(param);
 		/*
 		 * Required for gPXE iSCSI boot client
@@ -1668,7 +1653,7 @@ void iscsi_set_session_parameters(
 				param->value);
 		} else if (!strcmp(param->name, INITIALR2T)) {
 			ops->InitialR2T = !strcmp(param->value, YES);
-			 pr_debug("InitialR2T:                   %s\n",
+			pr_debug("InitialR2T:                   %s\n",
 				param->value);
 		} else if (!strcmp(param->name, IMMEDIATEDATA)) {
 			ops->ImmediateData = !strcmp(param->value, YES);

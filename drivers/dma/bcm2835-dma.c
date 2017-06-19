@@ -49,6 +49,7 @@
 
 #define BCM2835_DMA_MAX_DMA_CHAN_SUPPORTED 14
 #define BCM2835_DMA_CHAN_NAME_SIZE 8
+#define BCM2835_DMA_BULK_MASK  BIT(0)
 
 struct bcm2835_dmadev {
 	struct dma_device ddev;
@@ -253,20 +254,6 @@ static void bcm2835_dma_create_cb_set_length(
 
 	/* have we filled in period_length yet? */
 	if (*total_len + control_block->length < period_len) {
-		/*
-		 * If the next control block is the last in the period
-		 * and it's length would be less than half of max_len
-		 * change it so that both control blocks are (almost)
-		 * equally long. This avoids generating very short
-		 * control blocks (worst case would be 4 bytes) which
-		 * might be problematic. We also have to make sure the
-		 * new length is a multiple of 4 bytes.
-		 */
-		if (*total_len + control_block->length + max_len / 2 >
-		    period_len) {
-			control_block->length =
-				DIV_ROUND_UP(period_len - *total_len, 8) * 4;
-		}
 		/* update number of bytes in this period so far */
 		*total_len += control_block->length;
 		return;
@@ -411,11 +398,12 @@ static void bcm2835_dma_fill_cb_chain_with_sg(
 	unsigned int sg_len)
 {
 	struct bcm2835_chan *c = to_bcm2835_dma_chan(chan);
-	size_t max_len = bcm2835_dma_max_frame_length(c);
-	unsigned int i, len;
+	size_t len, max_len;
+	unsigned int i;
 	dma_addr_t addr;
 	struct scatterlist *sgent;
 
+	max_len = bcm2835_dma_max_frame_length(c);
 	for_each_sg(sgl, sgent, sg_len, i) {
 		for (addr = sg_dma_address(sgent), len = sg_dma_len(sgent);
 		     len > 0;
@@ -588,16 +576,16 @@ static enum dma_status bcm2835_dma_tx_status(struct dma_chan *chan,
 	struct virt_dma_desc *vd;
 	enum dma_status ret;
 	unsigned long flags;
-	u32 residue;
 
 	ret = dma_cookie_status(chan, cookie, txstate);
-	if (ret == DMA_COMPLETE)
+	if (ret == DMA_COMPLETE || !txstate)
 		return ret;
 
 	spin_lock_irqsave(&c->vc.lock, flags);
 	vd = vchan_find_desc(&c->vc, cookie);
 	if (vd) {
-		residue = bcm2835_dma_desc_size(to_bcm2835_dma_desc(&vd->tx));
+		txstate->residue =
+			bcm2835_dma_desc_size(to_bcm2835_dma_desc(&vd->tx));
 	} else if (c->desc && c->desc->vd.tx.cookie == cookie) {
 		struct bcm2835_desc *d = c->desc;
 		dma_addr_t pos;
@@ -609,24 +597,10 @@ static enum dma_status bcm2835_dma_tx_status(struct dma_chan *chan,
 		else
 			pos = 0;
 
-		residue = bcm2835_dma_desc_size_pos(d, pos);
-
-		/*
-		 * If our non-cyclic transfer is done, then report
-		 * complete and trigger the next tx now.  This lets
-		 * the dmaengine API be used synchronously from an IRQ
-		 * handler.
-		 */
-		if (!d->cyclic && residue == 0) {
-			vchan_cookie_complete(&c->desc->vd);
-			bcm2835_dma_start_desc(c);
-			ret = dma_cookie_status(chan, cookie, txstate);
-		}
+		txstate->residue = bcm2835_dma_desc_size_pos(d, pos);
 	} else {
-		residue = 0;
+		txstate->residue = 0;
 	}
-
-	dma_set_residue(txstate, residue);
 
 	spin_unlock_irqrestore(&c->vc.lock, flags);
 
@@ -645,7 +619,7 @@ static void bcm2835_dma_issue_pending(struct dma_chan *chan)
 	spin_unlock_irqrestore(&c->vc.lock, flags);
 }
 
-struct dma_async_tx_descriptor *bcm2835_dma_prep_dma_memcpy(
+static struct dma_async_tx_descriptor *bcm2835_dma_prep_dma_memcpy(
 	struct dma_chan *chan, dma_addr_t dst, dma_addr_t src,
 	size_t len, unsigned long flags)
 {
@@ -953,6 +927,9 @@ static int bcm2835_dma_probe(struct platform_device *pdev)
 	base = devm_ioremap_resource(&pdev->dev, res);
 	if (IS_ERR(base))
 		return PTR_ERR(base);
+	rc = bcm_dmaman_probe(pdev, base, BCM2835_DMA_BULK_MASK);
+	if (rc)
+		dev_err(&pdev->dev, "Failed to initialize the legacy API\n");
 
 	od->base = base;
 
@@ -990,6 +967,9 @@ static int bcm2835_dma_probe(struct platform_device *pdev)
 		goto err_no_dma;
 	}
 
+	/* Channel 0 is used by the legacy API */
+	chans_available &= ~BCM2835_DMA_BULK_MASK;
+
 	/* get irqs for each channel that we support */
 	for (i = 0; i <= BCM2835_DMA_MAX_DMA_CHAN_SUPPORTED; i++) {
 		/* skip masked out channels */
@@ -1006,7 +986,7 @@ static int bcm2835_dma_probe(struct platform_device *pdev)
 
 		/* legacy device tree case handling */
 		dev_warn_once(&pdev->dev,
-			      "missing interrupts-names property in device tree - legacy interpretation is used");
+			      "missing interrupt-names property in device tree - legacy interpretation is used\n");
 		/*
 		 * in case of channel >= 11
 		 * use the 11th interrupt and that is shared
@@ -1052,14 +1032,6 @@ static int bcm2835_dma_probe(struct platform_device *pdev)
 	}
 
 	dev_dbg(&pdev->dev, "Load BCM2835 DMA engine driver\n");
-
-	/* load the legacy api if bit 0 in the mask is cleared */
-	if ((chans_available & BIT(0)) == 0) {
-		rc = bcm_dmaman_probe(pdev, base, BIT(0));
-		if (rc)
-			dev_err(&pdev->dev,
-				"Failed to initialize the legacy API\n");
-	}
 
 	return 0;
 

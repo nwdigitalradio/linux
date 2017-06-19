@@ -20,7 +20,9 @@
 
 #include "vc4_drv.h"
 #include "vc4_regs.h"
+#include "drm_atomic.h"
 #include "drm_atomic_helper.h"
+#include "drm_fourcc.h"
 #include "drm_fb_cma_helper.h"
 #include "drm_plane_helper.h"
 
@@ -216,7 +218,7 @@ static void vc4_plane_destroy_state(struct drm_plane *plane,
 	}
 
 	kfree(vc4_state->dlist);
-	__drm_atomic_helper_plane_destroy_state(plane, &vc4_state->base);
+	__drm_atomic_helper_plane_destroy_state(&vc4_state->base);
 	kfree(state);
 }
 
@@ -498,8 +500,8 @@ static int vc4_plane_mode_set(struct drm_plane *plane,
 	u32 ctl0_offset = vc4_state->dlist_count;
 	const struct hvs_format *format = vc4_get_hvs_format(fb->pixel_format);
 	int num_planes = drm_format_num_planes(format->drm);
-	u32 scl0, scl1;
-	u32 lbm_size;
+	u32 scl0, scl1, pitch0;
+	u32 lbm_size, tiling = SCALER_CTL0_TILING_LINEAR;
 	unsigned long irqflags;
 	int ret, i;
 
@@ -540,11 +542,31 @@ static int vc4_plane_mode_set(struct drm_plane *plane,
 		scl1 = vc4_get_scl_field(state, 0);
 	}
 
+	switch (fb->modifier[0]) {
+	case DRM_FORMAT_MOD_NONE:
+		tiling = SCALER_CTL0_TILING_LINEAR;
+		pitch0 = VC4_SET_FIELD(fb->pitches[0], SCALER_SRC_PITCH);
+		break;
+	case DRM_FORMAT_MOD_BROADCOM_VC4_T_TILED:
+		tiling = SCALER_CTL0_TILING_256B_OR_T;
+
+		pitch0 = (VC4_SET_FIELD(0, SCALER_PITCH0_TILE_Y_OFFSET),
+			  VC4_SET_FIELD(0, SCALER_PITCH0_TILE_WIDTH_L),
+			  VC4_SET_FIELD((vc4_state->src_w[0] + 31) >> 5,
+					SCALER_PITCH0_TILE_WIDTH_R));
+		break;
+	default:
+		DRM_DEBUG_KMS("Unsupported FB tiling flag 0x%16llx",
+			      (long long)fb->modifier[0]);
+		return -EINVAL;
+	}
+
 	/* Control word */
 	vc4_dlist_write(vc4_state,
 			SCALER_CTL0_VALID |
 			(format->pixel_order << SCALER_CTL0_ORDER_SHIFT) |
 			(format->hvs << SCALER_CTL0_PIXEL_FORMAT_SHIFT) |
+			VC4_SET_FIELD(tiling, SCALER_CTL0_TILING) |
 			(vc4_state->is_unity ? SCALER_CTL0_UNITY : 0) |
 			VC4_SET_FIELD(scl0, SCALER_CTL0_SCL0) |
 			VC4_SET_FIELD(scl1, SCALER_CTL0_SCL1));
@@ -598,8 +620,11 @@ static int vc4_plane_mode_set(struct drm_plane *plane,
 	for (i = 0; i < num_planes; i++)
 		vc4_dlist_write(vc4_state, 0xc0c0c0c0);
 
-	/* Pitch word 0/1/2 */
-	for (i = 0; i < num_planes; i++) {
+	/* Pitch word 0 */
+	vc4_dlist_write(vc4_state, pitch0);
+
+	/* Pitch word 1/2 */
+	for (i = 1; i < num_planes; i++) {
 		vc4_dlist_write(vc4_state,
 				VC4_SET_FIELD(fb->pitches[i], SCALER_SRC_PITCH));
 	}
@@ -698,9 +723,10 @@ u32 vc4_plane_write_dlist(struct drm_plane *plane, u32 __iomem *dlist)
 	return vc4_state->dlist_count;
 }
 
-u32 vc4_plane_dlist_size(struct drm_plane_state *state)
+u32 vc4_plane_dlist_size(const struct drm_plane_state *state)
 {
-	struct vc4_plane_state *vc4_state = to_vc4_plane_state(state);
+	const struct vc4_plane_state *vc4_state =
+		container_of(state, typeof(*vc4_state), base);
 
 	return vc4_state->dlist_count;
 }
@@ -734,8 +760,6 @@ void vc4_plane_async_set_fb(struct drm_plane *plane, struct drm_framebuffer *fb)
 }
 
 static const struct drm_plane_helper_funcs vc4_plane_helper_funcs = {
-	.prepare_fb = NULL,
-	.cleanup_fb = NULL,
 	.atomic_check = vc4_plane_atomic_check,
 	.atomic_update = vc4_plane_atomic_update,
 };
@@ -770,18 +794,17 @@ vc4_update_plane(struct drm_plane *plane,
 	if (!plane_state)
 		goto out;
 
-	/* If we're changing the cursor contents, do that in the
-	 * normal vblank-synced atomic path.
-	 */
-	if (fb != plane_state->fb)
-		goto out;
-
 	/* No configuring new scaling in the fast path. */
 	if (crtc_w != plane_state->crtc_w ||
 	    crtc_h != plane_state->crtc_h ||
 	    src_w != plane_state->src_w ||
 	    src_h != plane_state->src_h) {
 		goto out;
+	}
+
+	if (fb != plane_state->fb) {
+		drm_atomic_set_fb_for_plane(plane->state, fb);
+		vc4_plane_async_set_fb(plane, fb);
 	}
 
 	/* Set the cursor's position on the screen.  This is the
@@ -862,7 +885,7 @@ struct drm_plane *vc4_plane_init(struct drm_device *dev,
 	ret = drm_universal_plane_init(dev, plane, 0xff,
 				       &vc4_plane_funcs,
 				       formats, num_formats,
-				       type);
+				       type, NULL);
 
 	drm_plane_helper_add(plane, &vc4_plane_helper_funcs);
 

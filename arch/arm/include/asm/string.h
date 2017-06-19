@@ -24,7 +24,7 @@ extern void * memchr(const void *, int, __kernel_size_t);
 #define __HAVE_ARCH_MEMSET
 extern void * memset(void *, int, __kernel_size_t);
 
-#ifdef CONFIG_MACH_BCM2708
+#ifdef CONFIG_BCM2835_FAST_MEMCPY
 #define __HAVE_ARCH_MEMCMP
 extern int memcmp(const void *, const void *, size_t);
 #endif

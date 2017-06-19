@@ -205,8 +205,8 @@ static int radeon_cursor_move_locked(struct drm_crtc *crtc, int x, int y)
 	}
 
 	if (x <= (crtc->x - w) || y <= (crtc->y - radeon_crtc->cursor_height) ||
-	    x >= (crtc->x + crtc->mode.crtc_hdisplay) ||
-	    y >= (crtc->y + crtc->mode.crtc_vdisplay))
+	    x >= (crtc->x + crtc->mode.hdisplay) ||
+	    y >= (crtc->y + crtc->mode.vdisplay))
 		goto out_of_bounds;
 
 	x += xorigin;
@@ -298,7 +298,7 @@ int radeon_crtc_cursor_set2(struct drm_crtc *crtc,
 		return -EINVAL;
 	}
 
-	obj = drm_gem_object_lookup(crtc->dev, file_priv, handle);
+	obj = drm_gem_object_lookup(file_priv, handle);
 	if (!obj) {
 		DRM_ERROR("Cannot find cursor object %x for crtc %d\n", handle, radeon_crtc->crtc_id);
 		return -ENOENT;

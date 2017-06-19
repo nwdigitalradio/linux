@@ -23,7 +23,6 @@
  * - BUS:    bus glue code, bus abstraction layer
  *
  * Compile Options
- * - CONFIG_USB_CHIPIDEA_DEBUG: enable debug facilities
  * - STALL_IN:  non-empty bulk-in pipes cannot be halted
  *              if defined mass storage compliance succeeds but with warnings
  *              => case 4: Hi >  Dn
@@ -71,7 +70,6 @@
 #include "udc.h"
 #include "bits.h"
 #include "host.h"
-#include "debug.h"
 #include "otg.h"
 #include "otg_fsm.h"
 
@@ -518,38 +516,6 @@ int hw_device_reset(struct ci_hdrc *ci)
 	return 0;
 }
 
-/**
- * hw_wait_reg: wait the register value
- *
- * Sometimes, it needs to wait register value before going on.
- * Eg, when switch to device mode, the vbus value should be lower
- * than OTGSC_BSV before connects to host.
- *
- * @ci: the controller
- * @reg: register index
- * @mask: mast bit
- * @value: the bit value to wait
- * @timeout_ms: timeout in millisecond
- *
- * This function returns an error code if timeout
- */
-int hw_wait_reg(struct ci_hdrc *ci, enum ci_hw_regs reg, u32 mask,
-				u32 value, unsigned int timeout_ms)
-{
-	unsigned long elapse = jiffies + msecs_to_jiffies(timeout_ms);
-
-	while (hw_read(ci, reg, mask) != value) {
-		if (time_after(jiffies, elapse)) {
-			dev_err(ci->dev, "timeout waiting for %08x in %d\n",
-					mask, reg);
-			return -ETIMEDOUT;
-		}
-		msleep(20);
-	}
-
-	return 0;
-}
-
 static irqreturn_t ci_irq(int irq, void *data)
 {
 	struct ci_hdrc *ci = data;
@@ -688,53 +654,43 @@ static int ci_get_platdata(struct device *dev,
 	if (usb_get_maximum_speed(dev) == USB_SPEED_FULL)
 		platdata->flags |= CI_HDRC_FORCE_FULLSPEED;
 
-	if (of_find_property(dev->of_node, "phy-clkgate-delay-us", NULL))
-		of_property_read_u32(dev->of_node, "phy-clkgate-delay-us",
+	of_property_read_u32(dev->of_node, "phy-clkgate-delay-us",
 				     &platdata->phy_clkgate_delay_us);
 
 	platdata->itc_setting = 1;
-	if (of_find_property(dev->of_node, "itc-setting", NULL)) {
-		ret = of_property_read_u32(dev->of_node, "itc-setting",
-			&platdata->itc_setting);
-		if (ret) {
-			dev_err(dev,
-				"failed to get itc-setting\n");
-			return ret;
-		}
-	}
 
-	if (of_find_property(dev->of_node, "ahb-burst-config", NULL)) {
-		ret = of_property_read_u32(dev->of_node, "ahb-burst-config",
-			&platdata->ahb_burst_config);
-		if (ret) {
-			dev_err(dev,
-				"failed to get ahb-burst-config\n");
-			return ret;
-		}
+	of_property_read_u32(dev->of_node, "itc-setting",
+					&platdata->itc_setting);
+
+	ret = of_property_read_u32(dev->of_node, "ahb-burst-config",
+				&platdata->ahb_burst_config);
+	if (!ret) {
 		platdata->flags |= CI_HDRC_OVERRIDE_AHB_BURST;
+	} else if (ret != -EINVAL) {
+		dev_err(dev, "failed to get ahb-burst-config\n");
+		return ret;
 	}
 
-	if (of_find_property(dev->of_node, "tx-burst-size-dword", NULL)) {
-		ret = of_property_read_u32(dev->of_node, "tx-burst-size-dword",
-			&platdata->tx_burst_size);
-		if (ret) {
-			dev_err(dev,
-				"failed to get tx-burst-size-dword\n");
-			return ret;
-		}
+	ret = of_property_read_u32(dev->of_node, "tx-burst-size-dword",
+				&platdata->tx_burst_size);
+	if (!ret) {
 		platdata->flags |= CI_HDRC_OVERRIDE_TX_BURST;
+	} else if (ret != -EINVAL) {
+		dev_err(dev, "failed to get tx-burst-size-dword\n");
+		return ret;
 	}
 
-	if (of_find_property(dev->of_node, "rx-burst-size-dword", NULL)) {
-		ret = of_property_read_u32(dev->of_node, "rx-burst-size-dword",
-			&platdata->rx_burst_size);
-		if (ret) {
-			dev_err(dev,
-				"failed to get rx-burst-size-dword\n");
-			return ret;
-		}
+	ret = of_property_read_u32(dev->of_node, "rx-burst-size-dword",
+				&platdata->rx_burst_size);
+	if (!ret) {
 		platdata->flags |= CI_HDRC_OVERRIDE_RX_BURST;
+	} else if (ret != -EINVAL) {
+		dev_err(dev, "failed to get rx-burst-size-dword\n");
+		return ret;
 	}
+
+	if (of_find_property(dev->of_node, "non-zero-ttctrl-ttha", NULL))
+		platdata->flags |= CI_HDRC_SET_NON_ZERO_TTHA;
 
 	ext_id = ERR_PTR(-ENODEV);
 	ext_vbus = ERR_PTR(-ENODEV);

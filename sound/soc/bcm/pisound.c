@@ -56,7 +56,7 @@ static void pisnd_midi_uninit(void);
 
 #define PISOUND_LOG_PREFIX "pisound: "
 
-#ifdef PISOUND_DEBUG
+#ifdef DEBUG
 #	define printd(...) pr_alert(PISOUND_LOG_PREFIX __VA_ARGS__)
 #else
 #	define printd(...) do {} while (0)
@@ -120,7 +120,7 @@ static void pisnd_midi_recv_callback(void *substream)
 	while ((n = pisnd_spi_recv(data, sizeof(data)))) {
 		int res = snd_rawmidi_receive(substream, data, n);
 		(void)res;
-		printd("midi recv %u bytes, res = %d\n", n, res);
+		printd("midi recv 0x%02x, res = %d\n", data, res);
 	}
 }
 
@@ -1076,7 +1076,8 @@ static int pisnd_probe(struct platform_device *pdev)
 	ret = snd_soc_register_card(&pisnd_card);
 
 	if (ret < 0) {
-		printe("snd_soc_register_card() failed: %d\n", ret);
+		if (ret != -EPROBE_DEFER)
+			printe("snd_soc_register_card() failed: %d\n", ret);
 		pisnd_uninit_gpio();
 		kobject_put(pisnd_kobj);
 		pisnd_spi_uninit();

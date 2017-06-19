@@ -45,10 +45,6 @@ static int snd_rpi_raspidac3_init(struct snd_soc_pcm_runtime *rtd)
 	else {
 		struct snd_kcontrol *kctl;
 
-		ret = tpa6130a2_add_controls(codec);
-		if (ret < 0)
-			dev_warn(card->dev, "Failed to add TPA6130A2 controls: %d\n",
-				 ret);
 		ret = snd_soc_limit_volume(card,
 					   "TPA6130A2 Headphone Playback Volume",
 					   54);
@@ -90,7 +86,6 @@ static int snd_rpi_raspidac3_startup(struct snd_pcm_substream *substream) {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_codec *codec = rtd->codec;
 	snd_soc_update_bits(codec, PCM512x_GPIO_CONTROL_1, 0x08,0x08);
-	tpa6130a2_stereo_enable(codec, 1);
 	return 0;
 }
 
@@ -99,7 +94,6 @@ static void snd_rpi_raspidac3_shutdown(struct snd_pcm_substream *substream) {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_codec *codec = rtd->codec;
 	snd_soc_update_bits(codec, PCM512x_GPIO_CONTROL_1, 0x08,0x00);
-	tpa6130a2_stereo_enable(codec, 0);
 }
 
 /* machine stream operations */
@@ -155,7 +149,7 @@ static int snd_rpi_raspidac3_probe(struct platform_device *pdev)
 	}
 
 	ret = snd_soc_register_card(&snd_rpi_raspidac3);
-	if (ret)
+	if (ret && ret != -EPROBE_DEFER)
 		dev_err(&pdev->dev,
 			"snd_soc_register_card() failed: %d\n", ret);
 

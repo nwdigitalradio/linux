@@ -961,15 +961,15 @@ static int metadata_commit(struct era_metadata *md)
 		}
 	}
 
-	r = save_sm_root(md);
-	if (r) {
-		DMERR("%s: save_sm_root failed", __func__);
-		return r;
-	}
-
 	r = dm_tm_pre_commit(md->tm);
 	if (r) {
 		DMERR("%s: pre commit failed", __func__);
+		return r;
+	}
+
+	r = save_sm_root(md);
+	if (r) {
+		DMERR("%s: save_sm_root failed", __func__);
 		return r;
 	}
 
@@ -1540,9 +1540,9 @@ static int era_map(struct dm_target *ti, struct bio *bio)
 	remap_to_origin(era, bio);
 
 	/*
-	 * REQ_FLUSH bios carry no data, so we're not interested in them.
+	 * REQ_PREFLUSH bios carry no data, so we're not interested in them.
 	 */
-	if (!(bio->bi_rw & REQ_FLUSH) &&
+	if (!(bio->bi_opf & REQ_PREFLUSH) &&
 	    (bio_data_dir(bio) == WRITE) &&
 	    !metadata_current_marked(era->md, block)) {
 		defer_bio(era, bio);

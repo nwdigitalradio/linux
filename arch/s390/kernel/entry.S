@@ -23,6 +23,7 @@
 #include <asm/vx-insn.h>
 #include <asm/setup.h>
 #include <asm/nmi.h>
+#include <asm/export.h>
 
 __PT_R0      =	__PT_GPRS
 __PT_R1      =	__PT_GPRS + 8
@@ -163,6 +164,16 @@ _PIF_WORK	= (_PIF_PER_TRAP)
 	.endm
 
 	.section .kprobes.text, "ax"
+.Ldummy:
+	/*
+	 * This nop exists only in order to avoid that __switch_to starts at
+	 * the beginning of the kprobes text section. In that case we would
+	 * have several symbols at the same address. E.g. objdump would take
+	 * an arbitrary symbol name when disassembling this code.
+	 * With the added nop in between the __switch_to symbol is unique
+	 * again.
+	 */
+	nop	0
 
 /*
  * Scheduler resume function, called by switch_to
@@ -175,7 +186,6 @@ ENTRY(__switch_to)
 	stmg	%r6,%r15,__SF_GPRS(%r15)	# store gprs of prev task
 	lgr	%r1,%r2
 	aghi	%r1,__TASK_thread		# thread_struct of prev task
-	lg	%r4,__TASK_thread_info(%r2)	# get thread_info of prev
 	lg	%r5,__TASK_thread_info(%r3)	# get thread_info of next
 	stg	%r15,__THREAD_ksp(%r1)		# store kernel stack of prev
 	lgr	%r1,%r3
@@ -186,6 +196,7 @@ ENTRY(__switch_to)
 	stg	%r5,__LC_THREAD_INFO		# store thread info of next
 	stg	%r15,__LC_KERNEL_STACK		# store end of kernel stack
 	lg	%r15,__THREAD_ksp(%r1)		# load kernel stack of next
+	/* c4 is used in guest detection: arch/s390/kernel/perf_cpum_sf.c */
 	lctl	%c4,%c4,__TASK_pid(%r3)		# load pid to control reg. 4
 	mvc	__LC_CURRENT_PID(4,%r0),__TASK_pid(%r3) # store pid of next
 	lmg	%r6,%r15,__SF_GPRS(%r15)	# load gprs of next task
@@ -229,12 +240,17 @@ ENTRY(sie64a)
 	lctlg	%c1,%c1,__LC_USER_ASCE		# load primary asce
 .Lsie_done:
 # some program checks are suppressing. C code (e.g. do_protection_exception)
-# will rewind the PSW by the ILC, which is 4 bytes in case of SIE. Other
-# instructions between sie64a and .Lsie_done should not cause program
-# interrupts. So lets use a nop (47 00 00 00) as a landing pad.
+# will rewind the PSW by the ILC, which is often 4 bytes in case of SIE. There
+# are some corner cases (e.g. runtime instrumentation) where ILC is unpredictable.
+# Other instructions between sie64a and .Lsie_done should not cause program
+# interrupts. So lets use 3 nops as a landing pad for all possible rewinds.
 # See also .Lcleanup_sie
-.Lrewind_pad:
-	nop	0
+.Lrewind_pad6:
+	nopr	7
+.Lrewind_pad4:
+	nopr	7
+.Lrewind_pad2:
+	nopr	7
 	.globl sie_exit
 sie_exit:
 	lg	%r14,__SF_EMPTY+8(%r15)		# load guest register save area
@@ -247,8 +263,12 @@ sie_exit:
 	stg	%r14,__SF_EMPTY+16(%r15)	# set exit reason code
 	j	sie_exit
 
-	EX_TABLE(.Lrewind_pad,.Lsie_fault)
+	EX_TABLE(.Lrewind_pad6,.Lsie_fault)
+	EX_TABLE(.Lrewind_pad4,.Lsie_fault)
+	EX_TABLE(.Lrewind_pad2,.Lsie_fault)
 	EX_TABLE(sie_exit,.Lsie_fault)
+EXPORT_SYMBOL(sie64a)
+EXPORT_SYMBOL(sie_exit)
 #endif
 
 /*
@@ -308,6 +328,7 @@ ENTRY(system_call)
 	lg	%r14,__LC_VDSO_PER_CPU
 	lmg	%r0,%r10,__PT_R0(%r11)
 	mvc	__LC_RETURN_PSW(16),__PT_PSW(%r11)
+.Lsysc_exit_timer:
 	stpt	__LC_EXIT_TIMER
 	mvc	__VDSO_ECTG_BASE(16,%r14),__LC_EXIT_TIMER
 	lmg	%r11,%r15,__PT_R11(%r11)
@@ -593,6 +614,7 @@ ENTRY(io_int_handler)
 	lg	%r14,__LC_VDSO_PER_CPU
 	lmg	%r0,%r10,__PT_R0(%r11)
 	mvc	__LC_RETURN_PSW(16),__PT_PSW(%r11)
+.Lio_exit_timer:
 	stpt	__LC_EXIT_TIMER
 	mvc	__VDSO_ECTG_BASE(16,%r14),__LC_EXIT_TIMER
 	lmg	%r11,%r15,__PT_R11(%r11)
@@ -764,6 +786,7 @@ ENTRY(psw_idle)
 	.insn	rsy,0xeb0000000017,%r1,5,__SF_EMPTY+16(%r15)
 .Lpsw_idle_stcctm:
 #endif
+	oi	__LC_CPU_FLAGS+7,_CIF_ENABLED_WAIT
 	STCK	__CLOCK_IDLE_ENTER(%r2)
 	stpt	__TIMER_IDLE_ENTER(%r2)
 .Lpsw_idle_lpsw:
@@ -814,6 +837,9 @@ ENTRY(save_fpu_regs)
 	oi	__LC_CPU_FLAGS+7,_CIF_FPU
 	br	%r14
 .Lsave_fpu_regs_end:
+#if IS_ENABLED(CONFIG_KVM)
+EXPORT_SYMBOL(save_fpu_regs)
+#endif
 
 /*
  * Load floating-point controls and floating-point or vector registers.
@@ -1118,15 +1144,23 @@ cleanup_critical:
 	br	%r14
 
 .Lcleanup_sysc_restore:
+	# check if stpt has been executed
 	clg	%r9,BASED(.Lcleanup_sysc_restore_insn)
+	jh	0f
+	mvc	__LC_EXIT_TIMER(8),__LC_ASYNC_ENTER_TIMER
+	cghi	%r11,__LC_SAVE_AREA_ASYNC
 	je	0f
+	mvc	__LC_EXIT_TIMER(8),__LC_MCCK_ENTER_TIMER
+0:	clg	%r9,BASED(.Lcleanup_sysc_restore_insn+8)
+	je	1f
 	lg	%r9,24(%r11)		# get saved pointer to pt_regs
 	mvc	__LC_RETURN_PSW(16),__PT_PSW(%r9)
 	mvc	0(64,%r11),__PT_R8(%r9)
 	lmg	%r0,%r7,__PT_R0(%r9)
-0:	lmg	%r8,%r9,__LC_RETURN_PSW
+1:	lmg	%r8,%r9,__LC_RETURN_PSW
 	br	%r14
 .Lcleanup_sysc_restore_insn:
+	.quad	.Lsysc_exit_timer
 	.quad	.Lsysc_done - 4
 
 .Lcleanup_io_tif:
@@ -1134,18 +1168,24 @@ cleanup_critical:
 	br	%r14
 
 .Lcleanup_io_restore:
+	# check if stpt has been executed
 	clg	%r9,BASED(.Lcleanup_io_restore_insn)
-	je	0f
+	jh	0f
+	mvc	__LC_EXIT_TIMER(8),__LC_MCCK_ENTER_TIMER
+0:	clg	%r9,BASED(.Lcleanup_io_restore_insn+8)
+	je	1f
 	lg	%r9,24(%r11)		# get saved r11 pointer to pt_regs
 	mvc	__LC_RETURN_PSW(16),__PT_PSW(%r9)
 	mvc	0(64,%r11),__PT_R8(%r9)
 	lmg	%r0,%r7,__PT_R0(%r9)
-0:	lmg	%r8,%r9,__LC_RETURN_PSW
+1:	lmg	%r8,%r9,__LC_RETURN_PSW
 	br	%r14
 .Lcleanup_io_restore_insn:
+	.quad	.Lio_exit_timer
 	.quad	.Lio_done - 4
 
 .Lcleanup_idle:
+	ni	__LC_CPU_FLAGS+7,255-_CIF_ENABLED_WAIT
 	# copy interrupt clock & cpu timer
 	mvc	__CLOCK_IDLE_EXIT(8,%r2),__LC_INT_CLOCK
 	mvc	__TIMER_IDLE_EXIT(8,%r2),__LC_ASYNC_ENTER_TIMER

@@ -604,6 +604,14 @@ static int zr364xx_read_video_callback(struct zr364xx_camera *cam,
 	ptr = pdest = frm->lpvbits;
 
 	if (frm->ulState == ZR364XX_READ_IDLE) {
+		if (purb->actual_length < 128) {
+			/* header incomplete */
+			dev_info(&cam->udev->dev,
+				 "%s: buffer (%d bytes) too small to hold jpeg header. Discarding.\n",
+				 __func__, purb->actual_length);
+			return -EINVAL;
+		}
+
 		frm->ulState = ZR364XX_READ_FRAME;
 		frm->cur_size = 0;
 
@@ -1045,10 +1053,8 @@ static int zr364xx_start_readpipe(struct zr364xx_camera *cam)
 	pipe_info->state = 1;
 	pipe_info->err_count = 0;
 	pipe_info->stream_urb = usb_alloc_urb(0, GFP_KERNEL);
-	if (!pipe_info->stream_urb) {
-		dev_err(&cam->udev->dev, "ReadStream: Unable to alloc URB\n");
+	if (!pipe_info->stream_urb)
 		return -ENOMEM;
-	}
 	/* transfer buffer allocated in board_init */
 	usb_fill_bulk_urb(pipe_info->stream_urb, cam->udev,
 			  pipe,

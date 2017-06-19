@@ -20,6 +20,9 @@ Required properties:
 		  the following order:
 
 		  - External oscillator
+		  - DSI0 byte clock
+		  - DSI0 DDR2 clock
+		  - DSI0 DDR clock
 		  - DSI1 byte clock
 		  - DSI1 DDR2 clock
 		  - DSI1 DDR clock

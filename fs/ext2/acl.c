@@ -172,9 +172,6 @@ ext2_get_acl(struct inode *inode, int type)
 		acl = ERR_PTR(retval);
 	kfree(value);
 
-	if (!IS_ERR(acl))
-		set_cached_acl(inode, type, acl);
-
 	return acl;
 }
 
@@ -196,7 +193,7 @@ ext2_set_acl(struct inode *inode, struct posix_acl *acl, int type)
 				error = posix_acl_update_mode(inode, &inode->i_mode, &acl);
 				if (error)
 					return error;
-				inode->i_ctime = CURRENT_TIME_SEC;
+				inode->i_ctime = current_time(inode);
 				mark_inode_dirty(inode);
 			}
 			break;

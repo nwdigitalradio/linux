@@ -190,7 +190,6 @@ static int bcm2835_smi_nand_probe(struct platform_device *pdev)
 	mtd->owner = THIS_MODULE;
 	mtd->dev.parent = dev;
 	mtd->name = DRIVER_NAME;
-	ppdata.of_node = node;
 
 	/* 20 us command delay time... */
 	this->chip_delay = 20;

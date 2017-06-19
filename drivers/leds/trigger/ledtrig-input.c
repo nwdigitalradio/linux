@@ -21,13 +21,13 @@
 static void input_trig_activate(struct led_classdev *led_cdev)
 {
 	led_cdev->flags |= SET_GPIO_INPUT;
-	led_set_brightness_async(led_cdev, 0);
+	led_set_brightness(led_cdev, 0);
 }
 
 static void input_trig_deactivate(struct led_classdev *led_cdev)
 {
 	led_cdev->flags |= SET_GPIO_OUTPUT;
-	led_set_brightness_async(led_cdev, 0);
+	led_set_brightness(led_cdev, 0);
 }
 
 static struct led_trigger input_led_trigger = {

@@ -144,7 +144,7 @@ static struct list_head *vc4_get_cache_list_for_size(struct drm_device *dev,
 	return &vc4->bo_cache.size_list[page_index];
 }
 
-void vc4_bo_cache_purge(struct drm_device *dev)
+static void vc4_bo_cache_purge(struct drm_device *dev)
 {
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
 
@@ -213,7 +213,6 @@ struct vc4_bo *vc4_bo_create(struct drm_device *dev, size_t unaligned_size,
 	size_t size = roundup(unaligned_size, PAGE_SIZE);
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
 	struct drm_gem_cma_object *cma_obj;
-	int pass, ret;
 	struct vc4_bo *bo;
 
 	if (size == 0)
@@ -227,35 +226,16 @@ struct vc4_bo *vc4_bo_create(struct drm_device *dev, size_t unaligned_size,
 		return bo;
 	}
 
-	/* Otherwise, make a new BO. */
-	for (pass = 0; ; pass++) {
-		cma_obj = drm_gem_cma_create(dev, size);
-		if (!IS_ERR(cma_obj))
-			break;
+	cma_obj = drm_gem_cma_create(dev, size);
+	if (IS_ERR(cma_obj)) {
+		/*
+		 * If we've run out of CMA memory, kill the cache of
+		 * CMA allocations we've got laying around and try again.
+		 */
+		vc4_bo_cache_purge(dev);
 
-		switch (pass) {
-		case 0:
-			/*
-			 * If we've run out of CMA memory, kill the cache of
-			 * CMA allocations we've got laying around and try again.
-			 */
-			vc4_bo_cache_purge(dev);
-			break;
-		case 1:
-			/*
-			 * Getting desperate, so try to wait for any
-			 * previous rendering to finish, free its
-			 * unreferenced BOs to the cache, and then
-			 * free the cache.
-			 */
-			ret = vc4_wait_for_seqno(dev, vc4->emit_seqno, ~0ull,
-						 true);
-			if (ret)
-				return ERR_PTR(ret);
-			vc4_job_handle_completed(vc4);
-			vc4_bo_cache_purge(dev);
-			break;
-		case 3:
+		cma_obj = drm_gem_cma_create(dev, size);
+		if (IS_ERR(cma_obj)) {
 			DRM_ERROR("Failed to allocate from CMA:\n");
 			vc4_bo_stats_dump(vc4);
 			return ERR_PTR(-ENOMEM);
@@ -425,9 +405,8 @@ int vc4_mmap(struct file *filp, struct vm_area_struct *vma)
 	vma->vm_flags &= ~VM_PFNMAP;
 	vma->vm_pgoff = 0;
 
-	ret = dma_mmap_writecombine(bo->base.base.dev->dev, vma,
-				    bo->base.vaddr, bo->base.paddr,
-				    vma->vm_end - vma->vm_start);
+	ret = dma_mmap_wc(bo->base.base.dev->dev, vma, bo->base.vaddr,
+			  bo->base.paddr, vma->vm_end - vma->vm_start);
 	if (ret)
 		drm_gem_vm_close(vma);
 
@@ -485,7 +464,7 @@ int vc4_mmap_bo_ioctl(struct drm_device *dev, void *data,
 	struct drm_vc4_mmap_bo *args = data;
 	struct drm_gem_object *gem_obj;
 
-	gem_obj = drm_gem_object_lookup(dev, file_priv, args->handle);
+	gem_obj = drm_gem_object_lookup(file_priv, args->handle);
 	if (!gem_obj) {
 		DRM_ERROR("Failed to look up GEM BO %d\n", args->handle);
 		return -EINVAL;
@@ -553,6 +532,89 @@ vc4_create_shader_bo_ioctl(struct drm_device *dev, void *data,
 	drm_gem_object_unreference_unlocked(&bo->base.base);
 
 	return ret;
+}
+
+/**
+ * vc4_set_tiling_ioctl() - Sets the tiling modifier for a BO.
+ * @dev: DRM device
+ * @data: ioctl argument
+ * @file_priv: DRM file for this fd
+ *
+ * The tiling state of the BO decides the default modifier of an fb if
+ * no specific modifier was set by userspace, and the return value of
+ * vc4_get_tiling_ioctl() (so that a BO shared to another DRM fd can
+ * treat the BO as the same tiling format).
+ */
+
+int vc4_set_tiling_ioctl(struct drm_device *dev, void *data,
+			 struct drm_file *file_priv)
+{
+	struct drm_vc4_set_tiling *args = data;
+	struct drm_gem_object *gem_obj;
+	struct vc4_bo *bo;
+	bool t_format;
+
+	if (args->flags != 0)
+		return -EINVAL;
+
+	switch (args->modifier) {
+	case DRM_FORMAT_MOD_NONE:
+		t_format = false;
+		break;
+	case DRM_FORMAT_MOD_BROADCOM_VC4_T_TILED:
+		t_format = true;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	gem_obj = drm_gem_object_lookup(file_priv, args->handle);
+	if (!gem_obj) {
+		DRM_ERROR("Failed to look up GEM BO %d\n", args->handle);
+		return -ENOENT;
+	}
+	bo = to_vc4_bo(gem_obj);
+	bo->t_format = t_format;
+
+	drm_gem_object_unreference_unlocked(gem_obj);
+
+	return 0;
+}
+
+/**
+ * vc4_get_tiling_ioctl() - Gets the tiling modifier for a BO.
+ * @dev: DRM device
+ * @data: ioctl argument
+ * @file_priv: DRM file for this fd
+ *
+ * Returns the tiling modifier for a BO as set by vc4_set_tiling_ioctl().
+ */
+
+int vc4_get_tiling_ioctl(struct drm_device *dev, void *data,
+			 struct drm_file *file_priv)
+{
+	struct drm_vc4_get_tiling *args = data;
+	struct drm_gem_object *gem_obj;
+	struct vc4_bo *bo;
+
+	if (args->flags != 0 || args->modifier != 0)
+		return -EINVAL;
+
+	gem_obj = drm_gem_object_lookup(file_priv, args->handle);
+	if (!gem_obj) {
+		DRM_ERROR("Failed to look up GEM BO %d\n", args->handle);
+		return -ENOENT;
+	}
+	bo = to_vc4_bo(gem_obj);
+
+	if (bo->t_format)
+		args->modifier = DRM_FORMAT_MOD_BROADCOM_VC4_T_TILED;
+	else
+		args->modifier = DRM_FORMAT_MOD_NONE;
+
+	drm_gem_object_unreference_unlocked(gem_obj);
+
+	return 0;
 }
 
 void vc4_bo_cache_init(struct drm_device *dev)

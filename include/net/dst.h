@@ -85,12 +85,11 @@ struct dst_entry {
 #endif
 
 #ifdef CONFIG_64BIT
-	struct lwtunnel_state   *lwtstate;
 	/*
 	 * Align __refcnt to a 64 bytes alignment
 	 * (L1_CACHE_SIZE would be too much)
 	 */
-	long			__pad_to_align_refcnt[1];
+	long			__pad_to_align_refcnt[2];
 #endif
 	/*
 	 * __refcnt wants to be on a different cache line from
@@ -99,9 +98,7 @@ struct dst_entry {
 	atomic_t		__refcnt;	/* client references	*/
 	int			__use;
 	unsigned long		lastuse;
-#ifndef CONFIG_64BIT
 	struct lwtunnel_state   *lwtstate;
-#endif
 	union {
 		struct dst_entry	*next;
 		struct rtable __rcu	*rt_next;
@@ -110,10 +107,16 @@ struct dst_entry {
 	};
 };
 
+struct dst_metrics {
+	u32		metrics[RTAX_MAX];
+	atomic_t	refcnt;
+};
+extern const struct dst_metrics dst_default_metrics;
+
 u32 *dst_cow_metrics_generic(struct dst_entry *dst, unsigned long old);
-extern const u32 dst_default_metrics[];
 
 #define DST_METRICS_READ_ONLY		0x1UL
+#define DST_METRICS_REFCOUNTED		0x2UL
 #define DST_METRICS_FLAGS		0x3UL
 #define __DST_METRICS_PTR(Y)	\
 	((u32 *)((Y) & ~DST_METRICS_FLAGS))
@@ -396,6 +399,18 @@ static inline void skb_tunnel_rx(struct sk_buff *skb, struct net_device *dev,
 	dev->stats.rx_packets++;
 	dev->stats.rx_bytes += skb->len;
 	__skb_tunnel_rx(skb, dev, net);
+}
+
+static inline u32 dst_tclassid(const struct sk_buff *skb)
+{
+#ifdef CONFIG_IP_ROUTE_CLASSID
+	const struct dst_entry *dst;
+
+	dst = skb_dst(skb);
+	if (dst)
+		return dst->tclassid;
+#endif
+	return 0;
 }
 
 int dst_discard_out(struct net *net, struct sock *sk, struct sk_buff *skb);

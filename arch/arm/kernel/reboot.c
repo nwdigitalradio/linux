@@ -50,7 +50,7 @@ static void __soft_restart(void *addr)
 	flush_cache_all();
 
 	/* Switch to the identity mapping. */
-	phys_reset = (phys_reset_t)(unsigned long)virt_to_idmap(cpu_reset);
+	phys_reset = (phys_reset_t)virt_to_idmap(cpu_reset);
 	phys_reset((unsigned long)addr);
 
 	/* Should never get here. */
@@ -146,6 +146,5 @@ void machine_restart(char *cmd)
 
 	/* Whoops - the platform was unable to reboot. Tell the user! */
 	printk("Reboot failed -- System halted\n");
-	local_irq_disable();
 	while (1);
 }

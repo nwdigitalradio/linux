@@ -13,7 +13,8 @@
 #include <linux/types.h>
 #include <linux/time.h>
 #include <linux/clocksource.h>
-#include <linux/module.h>
+#include <linux/init.h>
+#include <linux/export.h>
 #include <linux/hardirq.h>
 #include <linux/efi.h>
 #include <linux/interrupt.h>
@@ -30,6 +31,7 @@
 #include <asm/apic.h>
 #include <asm/timer.h>
 #include <asm/reboot.h>
+#include <asm/nmi.h>
 
 struct ms_hyperv_info ms_hyperv;
 EXPORT_SYMBOL_GPL(ms_hyperv);
@@ -157,6 +159,26 @@ static unsigned char hv_get_nmi_reason(void)
 	return 0;
 }
 
+#ifdef CONFIG_X86_LOCAL_APIC
+/*
+ * Prior to WS2016 Debug-VM sends NMIs to all CPUs which makes
+ * it dificult to process CHANNELMSG_UNLOAD in case of crash. Handle
+ * unknown NMI on the first CPU which gets it.
+ */
+static int hv_nmi_unknown(unsigned int val, struct pt_regs *regs)
+{
+	static atomic_t nmi_cpu = ATOMIC_INIT(-1);
+
+	if (!unknown_nmi_panic)
+		return NMI_DONE;
+
+	if (atomic_cmpxchg(&nmi_cpu, -1, raw_smp_processor_id()) != -1)
+		return NMI_HANDLED;
+
+	return NMI_DONE;
+}
+#endif
+
 static void __init ms_hyperv_init_platform(void)
 {
 	/*
@@ -166,8 +188,8 @@ static void __init ms_hyperv_init_platform(void)
 	ms_hyperv.misc_features = cpuid_edx(HYPERV_CPUID_FEATURES);
 	ms_hyperv.hints    = cpuid_eax(HYPERV_CPUID_ENLIGHTMENT_INFO);
 
-	printk(KERN_INFO "HyperV: features 0x%x, hints 0x%x\n",
-	       ms_hyperv.features, ms_hyperv.hints);
+	pr_info("HyperV: features 0x%x, hints 0x%x\n",
+		ms_hyperv.features, ms_hyperv.hints);
 
 #ifdef CONFIG_X86_LOCAL_APIC
 	if (ms_hyperv.features & HV_X64_MSR_APIC_FREQUENCY_AVAILABLE) {
@@ -179,9 +201,12 @@ static void __init ms_hyperv_init_platform(void)
 		rdmsrl(HV_X64_MSR_APIC_FREQUENCY, hv_lapic_frequency);
 		hv_lapic_frequency = div_u64(hv_lapic_frequency, HZ);
 		lapic_timer_frequency = hv_lapic_frequency;
-		printk(KERN_INFO "HyperV: LAPIC Timer Frequency: %#x\n",
-				lapic_timer_frequency);
+		pr_info("HyperV: LAPIC Timer Frequency: %#x\n",
+			lapic_timer_frequency);
 	}
+
+	register_nmi_handler(NMI_UNKNOWN, hv_nmi_unknown, NMI_FLAG_FIRST,
+			     "hv_nmi_unknown");
 #endif
 
 	if (ms_hyperv.features & HV_X64_MSR_TIME_REF_COUNT_AVAILABLE)

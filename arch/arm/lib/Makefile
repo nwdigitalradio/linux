@@ -18,7 +18,7 @@ mmu-y		:= clear_user.o copy_page.o getuser.o putuser.o       \
 		   copy_from_user.o copy_to_user.o
 
 # Choose optimised implementations for Raspberry Pi
-ifeq ($(CONFIG_MACH_BCM2708),y)
+ifeq ($(CONFIG_BCM2835_FAST_MEMCPY),y)
   CFLAGS_uaccess_with_memcpy.o += -DCOPY_FROM_USER_THRESHOLD=1600
   CFLAGS_uaccess_with_memcpy.o += -DCOPY_TO_USER_THRESHOLD=672
   obj-$(CONFIG_MODULES) += exports_rpi.o
@@ -38,7 +38,10 @@ else
   lib-y	+= io-readsw-armv4.o io-writesw-armv4.o
 endif
 
-lib-$(CONFIG_ARCH_RPC)		+= ecard.o io-acorn.o floppydma.o
+ifeq ($(CONFIG_ARCH_RPC),y)
+  lib-y				+= ecard.o io-acorn.o floppydma.o
+  AFLAGS_delay-loop.o		+= -march=armv4
+endif
 
 $(obj)/csumpartialcopy.o:	$(obj)/csumpartialcopygeneric.S
 $(obj)/csumpartialcopyuser.o:	$(obj)/csumpartialcopygeneric.S

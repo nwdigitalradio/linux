@@ -18,6 +18,7 @@
 #include "drm_atomic_helper.h"
 #include "drm_plane_helper.h"
 #include "drm_crtc_helper.h"
+#include "drm_fourcc.h"
 #include "linux/clk.h"
 #include "linux/debugfs.h"
 #include "drm_fb_cma_helper.h"
@@ -40,6 +41,7 @@ struct vc4_crtc {
 	void __iomem *regs;
 
 	struct drm_pending_vblank_event *event;
+	u32 overscan[4];
 };
 
 static inline struct vc4_crtc *to_vc4_crtc(struct drm_crtc *crtc)
@@ -102,6 +104,11 @@ static int vc4_plane_set_primary_blank(struct drm_plane *plane, bool blank)
 	struct vc4_dev *vc4 = to_vc4_dev(plane->dev);
 
 	u32 packet = blank;
+
+	DRM_DEBUG_ATOMIC("[PLANE:%d:%s] primary plane %s",
+			 plane->base.id, plane->name,
+			 blank ? "blank" : "unblank");
+
 	return rpi_firmware_property(vc4->firmware,
 				     RPI_FIRMWARE_FRAMEBUFFER_BLANK,
 				     &packet, sizeof(packet));
@@ -130,6 +137,10 @@ static void vc4_primary_plane_atomic_update(struct drm_plane *plane,
 	fbinfo->yoffset = state->crtc_y;
 	fbinfo->base = bo->paddr + fb->offsets[0];
 	fbinfo->pitch = fb->pitches[0];
+
+	if (fb->modifier[0] == DRM_FORMAT_MOD_BROADCOM_VC4_T_TILED)
+		fbinfo->bpp |= BIT(31);
+
 	/* A bug in the firmware makes it so that if the fb->base is
 	 * set to nonzero, the configured pitch gets overwritten with
 	 * the previous pitch.  So, to get the configured pitch
@@ -149,6 +160,16 @@ static void vc4_primary_plane_atomic_update(struct drm_plane *plane,
 		WARN_ON_ONCE(vc4_plane->pitch != fb->pitches[0]);
 	}
 
+	DRM_DEBUG_ATOMIC("[PLANE:%d:%s] primary update %dx%d@%d +%d,%d 0x%08x/%d\n",
+			 plane->base.id, plane->name,
+			 state->crtc_w,
+			 state->crtc_h,
+			 bpp,
+			 state->crtc_x,
+			 state->crtc_y,
+			 bo->paddr + fb->offsets[0],
+			 fb->pitches[0]);
+
 	ret = rpi_firmware_transaction(vc4->firmware,
 				       RPI_FIRMWARE_CHAN_FB,
 				       vc4_plane->fbinfo_bus_addr);
@@ -166,6 +187,7 @@ static void vc4_cursor_plane_atomic_update(struct drm_plane *plane,
 					   struct drm_plane_state *old_state)
 {
 	struct vc4_dev *vc4 = to_vc4_dev(plane->dev);
+	struct vc4_crtc *vc4_crtc = to_vc4_crtc(plane->crtc);
 	struct drm_plane_state *state = plane->state;
 	struct drm_framebuffer *fb = state->fb;
 	struct drm_gem_cma_object *bo = drm_fb_cma_get_gem_obj(fb, 0);
@@ -177,6 +199,21 @@ static void vc4_cursor_plane_atomic_update(struct drm_plane *plane,
 			      0, 0, /* hotx, hoty */};
 	WARN_ON_ONCE(fb->pitches[0] != state->crtc_w * 4);
 	WARN_ON_ONCE(fb->bits_per_pixel != 32);
+
+	DRM_DEBUG_ATOMIC("[PLANE:%d:%s] update %dx%d cursor at %d,%d (0x%08x/%d)",
+			 plane->base.id, plane->name,
+			 state->crtc_w,
+			 state->crtc_h,
+			 state->crtc_x,
+			 state->crtc_y,
+			 bo->paddr + fb->offsets[0],
+			 fb->pitches[0]);
+
+	/* add on the top/left offsets when overscan is active */
+	if (vc4_crtc) {
+		packet_state[1] += vc4_crtc->overscan[0];
+		packet_state[2] += vc4_crtc->overscan[1];
+	}
 
 	ret = rpi_firmware_property(vc4->firmware,
 				    RPI_FIRMWARE_SET_CURSOR_STATE,
@@ -199,6 +236,8 @@ static void vc4_cursor_plane_atomic_disable(struct drm_plane *plane,
 	struct vc4_dev *vc4 = to_vc4_dev(plane->dev);
 	u32 packet_state[] = { false, 0, 0, 0 };
 	int ret;
+
+	DRM_DEBUG_ATOMIC("[PLANE:%d:%s] disabling cursor", plane->base.id, plane->name);
 
 	ret = rpi_firmware_property(vc4->firmware,
 				    RPI_FIRMWARE_SET_CURSOR_STATE,
@@ -267,7 +306,7 @@ static struct drm_plane *vc4_fkms_plane_init(struct drm_device *dev,
 	ret = drm_universal_plane_init(dev, plane, 0xff,
 				       &vc4_plane_funcs,
 				       primary ? &xrgb8888 : &argb8888, 1,
-				       type);
+				       type, primary ? "primary" : "cursor");
 
 	if (type == DRM_PLANE_TYPE_PRIMARY) {
 		vc4_plane->fbinfo =
@@ -405,7 +444,7 @@ void vc4_fkms_cancel_page_flip(struct drm_crtc *crtc, struct drm_file *file)
 	spin_lock_irqsave(&dev->event_lock, flags);
 
 	if (vc4_crtc->event && vc4_crtc->event->base.file_priv == file) {
-		vc4_crtc->event->base.destroy(&vc4_crtc->event->base);
+		kfree(&vc4_crtc->event->base);
 		drm_crtc_vblank_put(crtc);
 		vc4_crtc->event = NULL;
 	}
@@ -590,7 +629,7 @@ static int vc4_fkms_bind(struct device *dev, struct device *master, void *data)
 	}
 
 	drm_crtc_init_with_planes(drm, crtc, primary_plane, cursor_plane,
-				  &vc4_crtc_funcs);
+				  &vc4_crtc_funcs, NULL);
 	drm_crtc_helper_add(crtc, &vc4_crtc_helper_funcs);
 	primary_plane->crtc = crtc;
 	cursor_plane->crtc = crtc;
@@ -602,7 +641,7 @@ static int vc4_fkms_bind(struct device *dev, struct device *master, void *data)
 	vc4_crtc->encoder = &vc4_encoder->base;
 	vc4_encoder->base.possible_crtcs |= drm_crtc_mask(crtc) ;
 	drm_encoder_init(drm, &vc4_encoder->base, &vc4_fkms_encoder_funcs,
-			 DRM_MODE_ENCODER_TMDS);
+			 DRM_MODE_ENCODER_TMDS, NULL);
 	drm_encoder_helper_add(&vc4_encoder->base,
 			       &vc4_fkms_encoder_helper_funcs);
 
@@ -618,6 +657,15 @@ static int vc4_fkms_bind(struct device *dev, struct device *master, void *data)
 			       vc4_crtc);
 	if (ret)
 		goto err_destroy_connector;
+
+	ret = rpi_firmware_property(vc4->firmware,
+				    RPI_FIRMWARE_FRAMEBUFFER_GET_OVERSCAN,
+				    &vc4_crtc->overscan,
+				    sizeof(vc4_crtc->overscan));
+	if (ret) {
+		DRM_ERROR("Failed to get overscan state: 0x%08x\n", vc4_crtc->overscan[0]);
+		memset(&vc4_crtc->overscan, 0, sizeof(vc4_crtc->overscan));
+	}
 
 	platform_set_drvdata(pdev, vc4_crtc);
 

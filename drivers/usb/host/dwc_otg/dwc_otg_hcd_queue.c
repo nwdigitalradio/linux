@@ -43,6 +43,7 @@
 #include "dwc_otg_regs.h"
 
 extern bool microframe_schedule;
+extern unsigned short int_ep_interval_min;
 
 /**
  * Free each QTD in the QH's QTD-list then free the QH.  QH should already be
@@ -59,6 +60,7 @@ void dwc_otg_hcd_qh_free(dwc_otg_hcd_t * hcd, dwc_otg_qh_t * qh)
 	uint32_t buf_size = 0;
 	uint8_t *align_buf_virt = NULL;
 	dwc_dma_t align_buf_dma;
+	struct device *dev = dwc_otg_hcd_to_dev(hcd);
 
 	/* Free each QTD in the QTD list */
 	DWC_SPINLOCK_IRQSAVE(hcd->lock, &flags);
@@ -82,7 +84,7 @@ void dwc_otg_hcd_qh_free(dwc_otg_hcd_t * hcd, dwc_otg_qh_t * qh)
 	DWC_FREE(qh);
 	DWC_SPINUNLOCK_IRQRESTORE(hcd->lock, flags);
 	if (align_buf_virt)
-		DWC_DMA_FREE(buf_size, align_buf_virt, align_buf_dma);
+		DWC_DMA_FREE(dev, buf_size, align_buf_virt, align_buf_dma);
 	return;
 }
 
@@ -217,21 +219,19 @@ void qh_init(dwc_otg_hcd_t * hcd, dwc_otg_qh_t * qh, dwc_otg_hcd_urb_t * urb)
 						    SCHEDULE_SLOP);
 		qh->interval = urb->interval;
 
-#if 0
-		/* Increase interrupt polling rate for debugging. */
-		if (qh->ep_type == UE_INTERRUPT) {
-			qh->interval = 8;
-		}
-#endif
 		hprt.d32 = DWC_READ_REG32(hcd->core_if->host_if->hprt0);
-		if ((hprt.b.prtspd == DWC_HPRT0_PRTSPD_HIGH_SPEED) &&
-		    ((dev_speed == USB_SPEED_LOW) ||
-		     (dev_speed == USB_SPEED_FULL))) {
-			qh->interval *= 8;
-			qh->sched_frame |= 0x7;
-			qh->start_split_frame = qh->sched_frame;
+		if (hprt.b.prtspd == DWC_HPRT0_PRTSPD_HIGH_SPEED) {
+			if (dev_speed == USB_SPEED_LOW ||
+					dev_speed == USB_SPEED_FULL) {
+				qh->interval *= 8;
+				qh->sched_frame |= 0x7;
+				qh->start_split_frame = qh->sched_frame;
+			} else if (int_ep_interval_min >= 2 &&
+					qh->interval < int_ep_interval_min &&
+					qh->ep_type == UE_INTERRUPT) {
+				qh->interval = int_ep_interval_min;
+			}
 		}
-
 	}
 
 	DWC_DEBUGPL(DBG_HCD, "DWC OTG HCD QH Initialized\n");
@@ -407,13 +407,17 @@ const unsigned short max_uframe_usecs[]={ 100, 100, 100, 100, 100, 100, 30, 0 };
 /*
  * called from dwc_otg_hcd.c:dwc_otg_hcd_init
  */
-int init_hcd_usecs(dwc_otg_hcd_t *_hcd)
+void init_hcd_usecs(dwc_otg_hcd_t *_hcd)
 {
 	int i;
-	for (i=0; i<8; i++) {
-		_hcd->frame_usecs[i] = max_uframe_usecs[i];
+	if (_hcd->flags.b.port_speed == DWC_HPRT0_PRTSPD_FULL_SPEED) {
+		_hcd->frame_usecs[0] = 900;
+		for (i = 1; i < 8; i++)
+			_hcd->frame_usecs[i] = 0;
+	} else {
+		for (i = 0; i < 8; i++)
+			_hcd->frame_usecs[i] = max_uframe_usecs[i];
 	}
-	return 0;
 }
 
 static int find_single_uframe(dwc_otg_hcd_t * _hcd, dwc_otg_qh_t * _qh)
@@ -540,8 +544,9 @@ static int find_uframe(dwc_otg_hcd_t * _hcd, dwc_otg_qh_t * _qh)
 	int ret;
 	ret = -1;
 
-	if (_qh->speed == USB_SPEED_HIGH) {
-		/* if this is a hs transaction we need a full frame */
+	if (_qh->speed == USB_SPEED_HIGH ||
+		_hcd->flags.b.port_speed == DWC_HPRT0_PRTSPD_FULL_SPEED) {
+		/* if this is a hs transaction we need a full frame - or account for FS usecs */
 		ret = find_single_uframe(_hcd, _qh);
 	} else {
 		/* if this is a fs transaction we may need a sequence of frames */
@@ -626,7 +631,7 @@ static int schedule_periodic(dwc_otg_hcd_t * hcd, dwc_otg_qh_t * qh)
 	if (status) {
 		DWC_INFO("%s: Insufficient periodic bandwidth for "
 			    "periodic transfer.\n", __func__);
-		return status;
+		return -DWC_E_NO_SPACE;
 	}
 	status = check_max_xfer_size(hcd, qh);
 	if (status) {
@@ -792,6 +797,10 @@ void dwc_otg_hcd_qh_deactivate(dwc_otg_hcd_t * hcd, dwc_otg_qh_t * qh,
 			/* Add back to inactive non-periodic schedule. */
 			dwc_otg_hcd_qh_add(hcd, qh);
 			//hcd->fiq_state->kick_np_queues = 1;
+		} else {
+			if(nak_holdoff && qh->do_split) {
+				qh->nak_frame = 0xFFFF;
+			}
 		}
 	} else {
 		uint16_t frame_number = dwc_otg_hcd_get_frame_number(hcd);

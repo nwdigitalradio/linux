@@ -6,7 +6,7 @@
  *
  * License 1: GPLv2
  *
- * Copyright (c) 2014 Advanced Micro Devices, Inc.
+ * Copyright (c) 2014-2016 Advanced Micro Devices, Inc.
  *
  * This file is free software; you may copy, redistribute and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -56,7 +56,7 @@
  *
  * License 2: Modified BSD
  *
- * Copyright (c) 2014 Advanced Micro Devices, Inc.
+ * Copyright (c) 2014-2016 Advanced Micro Devices, Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -768,12 +768,16 @@
 #define MTL_Q_TQDR			0x08
 #define MTL_Q_RQOMR			0x40
 #define MTL_Q_RQMPOCR			0x44
-#define MTL_Q_RQDR			0x4c
+#define MTL_Q_RQDR			0x48
 #define MTL_Q_RQFCR			0x50
 #define MTL_Q_IER			0x70
 #define MTL_Q_ISR			0x74
 
 /* MTL queue register entry bit positions and sizes */
+#define MTL_Q_RQDR_PRXQ_INDEX		16
+#define MTL_Q_RQDR_PRXQ_WIDTH		14
+#define MTL_Q_RQDR_RXQSTS_INDEX		4
+#define MTL_Q_RQDR_RXQSTS_WIDTH		2
 #define MTL_Q_RQFCR_RFA_INDEX		1
 #define MTL_Q_RQFCR_RFA_WIDTH		6
 #define MTL_Q_RQFCR_RFD_INDEX		17
@@ -913,8 +917,8 @@
 #define RX_PACKET_ATTRIBUTES_CSUM_DONE_WIDTH	1
 #define RX_PACKET_ATTRIBUTES_VLAN_CTAG_INDEX	1
 #define RX_PACKET_ATTRIBUTES_VLAN_CTAG_WIDTH	1
-#define RX_PACKET_ATTRIBUTES_INCOMPLETE_INDEX	2
-#define RX_PACKET_ATTRIBUTES_INCOMPLETE_WIDTH	1
+#define RX_PACKET_ATTRIBUTES_LAST_INDEX		2
+#define RX_PACKET_ATTRIBUTES_LAST_WIDTH		1
 #define RX_PACKET_ATTRIBUTES_CONTEXT_NEXT_INDEX	3
 #define RX_PACKET_ATTRIBUTES_CONTEXT_NEXT_WIDTH	1
 #define RX_PACKET_ATTRIBUTES_CONTEXT_INDEX	4
@@ -923,6 +927,8 @@
 #define RX_PACKET_ATTRIBUTES_RX_TSTAMP_WIDTH	1
 #define RX_PACKET_ATTRIBUTES_RSS_HASH_INDEX	6
 #define RX_PACKET_ATTRIBUTES_RSS_HASH_WIDTH	1
+#define RX_PACKET_ATTRIBUTES_FIRST_INDEX	7
+#define RX_PACKET_ATTRIBUTES_FIRST_WIDTH	1
 
 #define RX_NORMAL_DESC0_OVT_INDEX		0
 #define RX_NORMAL_DESC0_OVT_WIDTH		16

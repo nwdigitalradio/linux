@@ -105,7 +105,7 @@ static int proc_notify_change(struct dentry *dentry, struct iattr *iattr)
 	struct proc_dir_entry *de = PDE(inode);
 	int error;
 
-	error = inode_change_ok(inode, iattr);
+	error = setattr_prepare(dentry, iattr);
 	if (error)
 		return error;
 
@@ -318,7 +318,7 @@ int proc_readdir(struct file *file, struct dir_context *ctx)
 static const struct file_operations proc_dir_operations = {
 	.llseek			= generic_file_llseek,
 	.read			= generic_read_dir,
-	.iterate		= proc_readdir,
+	.iterate_shared		= proc_readdir,
 };
 
 /*
@@ -390,6 +390,8 @@ static struct proc_dir_entry *__proc_create(struct proc_dir_entry **parent,
 	atomic_set(&ent->count, 1);
 	spin_lock_init(&ent->pde_unload_lock);
 	INIT_LIST_HEAD(&ent->pde_openers);
+	proc_set_user(ent, (*parent)->uid, (*parent)->gid);
+
 out:
 	return ent;
 }
@@ -469,6 +471,7 @@ struct proc_dir_entry *proc_create_mount_point(const char *name)
 		ent->data = NULL;
 		ent->proc_fops = NULL;
 		ent->proc_iops = NULL;
+		parent->nlink++;
 		if (proc_register(parent, ent) < 0) {
 			kfree(ent);
 			parent->nlink--;

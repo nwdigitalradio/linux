@@ -41,6 +41,7 @@
 #include "dwc_list.h"
 #include "dwc_otg_cil.h"
 #include "dwc_otg_fiq_fsm.h"
+#include "dwc_otg_driver.h"
 
 
 /**
@@ -409,7 +410,8 @@ struct dwc_otg_hcd {
 			unsigned port_suspend_change:1;
 			unsigned port_over_current_change:1;
 			unsigned port_l1_change:1;
-			unsigned reserved:26;
+			unsigned port_speed:2;
+			unsigned reserved:24;
 		} b;
 	} flags;
 
@@ -567,7 +569,6 @@ struct dwc_otg_hcd {
 
 	/*  */
 	dwc_spinlock_t *lock;
-	dwc_spinlock_t *channel_lock;
 	/**
 	 * Private data that could be used by OS wrapper.
 	 */
@@ -613,6 +614,11 @@ struct dwc_otg_hcd {
 #endif
 };
 
+static inline struct device *dwc_otg_hcd_to_dev(struct dwc_otg_hcd *hcd)
+{
+	return &hcd->otg_dev->os_dep.platformdev->dev;
+}
+
 /** @name Transaction Execution Functions */
 /** @{ */
 extern dwc_otg_transaction_type_e dwc_otg_hcd_select_transactions(dwc_otg_hcd_t
@@ -624,7 +630,7 @@ int dwc_otg_hcd_allocate_port(dwc_otg_hcd_t * hcd, dwc_otg_qh_t *qh);
 void dwc_otg_hcd_release_port(dwc_otg_hcd_t * dwc_otg_hcd, dwc_otg_qh_t *qh);
 
 extern int fiq_fsm_queue_transaction(dwc_otg_hcd_t *hcd, dwc_otg_qh_t *qh);
-extern int fiq_fsm_transaction_suitable(dwc_otg_qh_t *qh);
+extern int fiq_fsm_transaction_suitable(dwc_otg_hcd_t *hcd, dwc_otg_qh_t *qh);
 extern void dwc_otg_cleanup_fiq_channel(dwc_otg_hcd_t *hcd, uint32_t num);
 
 /** @} */
@@ -817,6 +823,8 @@ static inline uint16_t dwc_micro_frame_num(uint16_t frame)
 {
 	return frame & 0x7;
 }
+
+extern void init_hcd_usecs(dwc_otg_hcd_t *_hcd);
 
 void dwc_otg_hcd_save_data_toggle(dwc_hc_t * hc,
 				  dwc_otg_hc_regs_t * hc_regs,

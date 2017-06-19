@@ -172,6 +172,24 @@ parisc_cache_init(void)
 		cache_info.ic_count,
 		cache_info.ic_loop);
 
+	printk("IT  base 0x%lx stride 0x%lx count 0x%lx loop 0x%lx off_base 0x%lx off_stride 0x%lx off_count 0x%lx\n",
+		cache_info.it_sp_base,
+		cache_info.it_sp_stride,
+		cache_info.it_sp_count,
+		cache_info.it_loop,
+		cache_info.it_off_base,
+		cache_info.it_off_stride,
+		cache_info.it_off_count);
+
+	printk("DT  base 0x%lx stride 0x%lx count 0x%lx loop 0x%lx off_base 0x%lx off_stride 0x%lx off_count 0x%lx\n",
+		cache_info.dt_sp_base,
+		cache_info.dt_sp_stride,
+		cache_info.dt_sp_count,
+		cache_info.dt_loop,
+		cache_info.dt_off_base,
+		cache_info.dt_off_stride,
+		cache_info.dt_off_count);
+
 	printk("ic_conf = 0x%lx  alias %d blk %d line %d shift %d\n",
 		*(unsigned long *) (&cache_info.ic_conf),
 		cache_info.ic_conf.cc_alias,
@@ -184,19 +202,19 @@ parisc_cache_init(void)
 		cache_info.ic_conf.cc_cst,
 		cache_info.ic_conf.cc_hv);
 
-	printk("D-TLB conf: sh %d page %d cst %d aid %d pad1 %d\n",
+	printk("D-TLB conf: sh %d page %d cst %d aid %d sr %d\n",
 		cache_info.dt_conf.tc_sh,
 		cache_info.dt_conf.tc_page,
 		cache_info.dt_conf.tc_cst,
 		cache_info.dt_conf.tc_aid,
-		cache_info.dt_conf.tc_pad1);
+		cache_info.dt_conf.tc_sr);
 
-	printk("I-TLB conf: sh %d page %d cst %d aid %d pad1 %d\n",
+	printk("I-TLB conf: sh %d page %d cst %d aid %d sr %d\n",
 		cache_info.it_conf.tc_sh,
 		cache_info.it_conf.tc_page,
 		cache_info.it_conf.tc_cst,
 		cache_info.it_conf.tc_aid,
-		cache_info.it_conf.tc_pad1);
+		cache_info.it_conf.tc_sr);
 #endif
 
 	split_tlb = 0;
@@ -301,7 +319,7 @@ void flush_dcache_page(struct page *page)
 	if (!mapping)
 		return;
 
-	pgoff = page->index << (PAGE_CACHE_SHIFT - PAGE_SHIFT);
+	pgoff = page->index;
 
 	/* We have carefully arranged in arch_get_unmapped_area() that
 	 * *any* mappings of a file are always congruently mapped (whether
@@ -327,7 +345,7 @@ void flush_dcache_page(struct page *page)
 				      != (addr & (SHM_COLOUR - 1))) {
 			__flush_cache_page(mpnt, addr, page_to_phys(page));
 			if (old_addr)
-				printk(KERN_ERR "INEQUIVALENT ALIASES 0x%lx and 0x%lx in file %s\n", old_addr, addr, mpnt->vm_file ? (char *)mpnt->vm_file->f_path.dentry->d_name.name : "(null)");
+				printk(KERN_ERR "INEQUIVALENT ALIASES 0x%lx and 0x%lx in file %pD\n", old_addr, addr, mpnt->vm_file);
 			old_addr = addr;
 		}
 	}
@@ -615,3 +633,25 @@ flush_cache_page(struct vm_area_struct *vma, unsigned long vmaddr, unsigned long
 		__flush_cache_page(vma, vmaddr, PFN_PHYS(pfn));
 	}
 }
+
+void flush_kernel_vmap_range(void *vaddr, int size)
+{
+	unsigned long start = (unsigned long)vaddr;
+
+	if ((unsigned long)size > parisc_cache_flush_threshold)
+		flush_data_cache();
+	else
+		flush_kernel_dcache_range_asm(start, start + size);
+}
+EXPORT_SYMBOL(flush_kernel_vmap_range);
+
+void invalidate_kernel_vmap_range(void *vaddr, int size)
+{
+	unsigned long start = (unsigned long)vaddr;
+
+	if ((unsigned long)size > parisc_cache_flush_threshold)
+		flush_data_cache();
+	else
+		flush_kernel_dcache_range_asm(start, start + size);
+}
+EXPORT_SYMBOL(invalidate_kernel_vmap_range);

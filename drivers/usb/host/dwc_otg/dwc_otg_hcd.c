@@ -193,10 +193,13 @@ static void kill_urbs_in_qh_list(dwc_otg_hcd_t * hcd, dwc_list_link_t * qh_list)
 			 * It is possible that the channel has already halted
 			 * but not yet been through the IRQ handler.
 			 */
-			dwc_otg_hc_halt(hcd->core_if, qh->channel,
-				DWC_OTG_HC_XFER_URB_DEQUEUE);
-			if(microframe_schedule)
-				hcd->available_host_channels++;
+			if (fiq_fsm_enable && (hcd->fiq_state->channel[qh->channel->hc_num].fsm != FIQ_PASSTHROUGH)) {
+				qh->channel->halt_status = DWC_OTG_HC_XFER_URB_DEQUEUE;
+				qh->channel->halt_pending = 1;
+			} else {
+				dwc_otg_hc_halt(hcd->core_if, qh->channel,
+						DWC_OTG_HC_XFER_URB_DEQUEUE);
+			}
 			qh->channel = NULL;
 		}
 		dwc_otg_hcd_qh_remove(hcd, qh);
@@ -285,13 +288,16 @@ static int32_t dwc_otg_hcd_disconnect_cb(void *p)
 	gintsts_data_t intr;
 	dwc_otg_hcd_t *dwc_otg_hcd = p;
 
+	DWC_SPINLOCK(dwc_otg_hcd->lock);
 	/*
 	 * Set status flags for the hub driver.
 	 */
 	dwc_otg_hcd->flags.b.port_connect_status_change = 1;
 	dwc_otg_hcd->flags.b.port_connect_status = 0;
-	if(fiq_enable)
+	if(fiq_enable) {
 		local_fiq_disable();
+		fiq_fsm_spin_lock(&dwc_otg_hcd->fiq_state->lock);
+	}
 	/*
 	 * Shutdown any transfers in process by clearing the Tx FIFO Empty
 	 * interrupt mask and status bits and disabling subsequent host
@@ -361,47 +367,23 @@ static int32_t dwc_otg_hcd_disconnect_cb(void *p)
 			}
 		}
 
-		for (i = 0; i < num_channels; i++) {
-			channel = dwc_otg_hcd->hc_ptr_array[i];
-			if (DWC_CIRCLEQ_EMPTY_ENTRY(channel, hc_list_entry)) {
-				hc_regs =
-				    dwc_otg_hcd->core_if->host_if->hc_regs[i];
-				hcchar.d32 = DWC_READ_REG32(&hc_regs->hcchar);
-				if (hcchar.b.chen) {
-					/* Halt the channel. */
-					hcchar.b.chdis = 1;
-					DWC_WRITE_REG32(&hc_regs->hcchar,
-							hcchar.d32);
-				}
-
-				dwc_otg_hc_cleanup(dwc_otg_hcd->core_if,
-						   channel);
-				DWC_CIRCLEQ_INSERT_TAIL
-				    (&dwc_otg_hcd->free_hc_list, channel,
-				     hc_list_entry);
-				/*
-				 * Added for Descriptor DMA to prevent channel double cleanup
-				 * in release_channel_ddma(). Which called from ep_disable
-				 * when device disconnect.
-				 */
-				channel->qh = NULL;
-			}
-		}
 		if(fiq_fsm_enable) {
 			for(i=0; i < 128; i++) {
 				dwc_otg_hcd->hub_port[i] = 0;
 			}
 		}
-
 	}
 
-	if(fiq_enable)
+	if(fiq_enable) {
+		fiq_fsm_spin_unlock(&dwc_otg_hcd->fiq_state->lock);
 		local_fiq_enable();
+	}
 
 	if (dwc_otg_hcd->fops->disconnect) {
 		dwc_otg_hcd->fops->disconnect(dwc_otg_hcd);
 	}
 
+	DWC_SPINUNLOCK(dwc_otg_hcd->lock);
 	return 1;
 }
 
@@ -616,7 +598,7 @@ int dwc_otg_hcd_urb_dequeue(dwc_otg_hcd_t * hcd,
 			if (fiq_fsm_enable && (hcd->fiq_state->channel[n].fsm != FIQ_PASSTHROUGH)) {
 				qh->channel->halt_status = DWC_OTG_HC_XFER_URB_DEQUEUE;
 				qh->channel->halt_pending = 1;
-				hcd->fiq_state->channel[n].fsm = FIQ_DEQUEUE_ISSUED;
+				//hcd->fiq_state->channel[n].fsm = FIQ_DEQUEUE_ISSUED;
 			} else {
 				dwc_otg_hc_halt(hcd->core_if, qh->channel,
 						DWC_OTG_HC_XFER_URB_DEQUEUE);
@@ -634,6 +616,8 @@ int dwc_otg_hcd_urb_dequeue(dwc_otg_hcd_t * hcd,
                     hcd->core_if->dma_desc_enable?"DMA ":"");
 	if (!hcd->core_if->dma_desc_enable) {
 		uint8_t b = urb_qtd->in_process;
+		if (nak_holdoff && qh->do_split && dwc_qh_is_non_per(qh))
+			qh->nak_frame = 0xFFFF;
 		dwc_otg_hcd_qtd_remove_and_free(hcd, urb_qtd, qh);
 		if (b) {
 			dwc_otg_hcd_qh_deactivate(hcd, qh, 0);
@@ -884,6 +868,7 @@ void dwc_otg_cleanup_fiq_channel(dwc_otg_hcd_t *hcd, uint32_t num)
  */
 static void dwc_otg_hcd_free(dwc_otg_hcd_t * dwc_otg_hcd)
 {
+	struct device *dev = dwc_otg_hcd_to_dev(dwc_otg_hcd);
 	int i;
 
 	DWC_DEBUGPL(DBG_HCD, "DWC OTG HCD FREE\n");
@@ -916,14 +901,13 @@ static void dwc_otg_hcd_free(dwc_otg_hcd_t * dwc_otg_hcd)
 
 	if (dwc_otg_hcd->core_if->dma_enable) {
 		if (dwc_otg_hcd->status_buf_dma) {
-			DWC_DMA_FREE(DWC_OTG_HCD_STATUS_BUF_SIZE,
+			DWC_DMA_FREE(dev, DWC_OTG_HCD_STATUS_BUF_SIZE,
 				     dwc_otg_hcd->status_buf,
 				     dwc_otg_hcd->status_buf_dma);
 		}
 	} else if (dwc_otg_hcd->status_buf != NULL) {
 		DWC_FREE(dwc_otg_hcd->status_buf);
 	}
-	DWC_SPINLOCK_FREE(dwc_otg_hcd->channel_lock);
 	DWC_SPINLOCK_FREE(dwc_otg_hcd->lock);
 	/* Set core_if's lock pointer to NULL */
 	dwc_otg_hcd->core_if->lock = NULL;
@@ -942,10 +926,9 @@ static void dwc_otg_hcd_free(dwc_otg_hcd_t * dwc_otg_hcd)
 	DWC_FREE(dwc_otg_hcd);
 }
 
-int init_hcd_usecs(dwc_otg_hcd_t *_hcd);
-
 int dwc_otg_hcd_init(dwc_otg_hcd_t * hcd, dwc_otg_core_if_t * core_if)
 {
+	struct device *dev = dwc_otg_hcd_to_dev(hcd);
 	int retval = 0;
 	int num_channels;
 	int i;
@@ -953,10 +936,8 @@ int dwc_otg_hcd_init(dwc_otg_hcd_t * hcd, dwc_otg_core_if_t * core_if)
 
 #if (defined(DWC_LINUX) && defined(CONFIG_DEBUG_SPINLOCK))
 	DWC_SPINLOCK_ALLOC_LINUX_DEBUG(hcd->lock);
-	DWC_SPINLOCK_ALLOC_LINUX_DEBUG(hcd->channel_lock);
 #else
 	hcd->lock = DWC_SPINLOCK_ALLOC();
-	hcd->channel_lock = DWC_SPINLOCK_ALLOC();
 #endif
         DWC_DEBUGPL(DBG_HCDV, "init of HCD %p given core_if %p\n",
                     hcd, core_if);
@@ -1019,6 +1000,10 @@ int dwc_otg_hcd_init(dwc_otg_hcd_t * hcd, dwc_otg_core_if_t * core_if)
 		}
 		DWC_MEMSET(hcd->fiq_state, 0, (sizeof(struct fiq_state) + (sizeof(struct fiq_channel_state) * num_channels)));
 
+#ifdef CONFIG_ARM64
+		spin_lock_init(&hcd->fiq_state->lock);
+#endif
+
 		for (i = 0; i < num_channels; i++) {
 			hcd->fiq_state->channel[i].fsm = FIQ_PASSTHROUGH;
 		}
@@ -1041,7 +1026,7 @@ int dwc_otg_hcd_init(dwc_otg_hcd_t * hcd, dwc_otg_core_if_t * core_if)
 		 * for use as transaction bounce buffers in a 2-D array. Our access into this chunk is done by some
 		 * moderately readable array casts.
 		 */
-		hcd->fiq_dmab = DWC_DMA_ALLOC((sizeof(struct fiq_dma_channel) * num_channels), &hcd->fiq_state->dma_base);
+		hcd->fiq_dmab = DWC_DMA_ALLOC(dev, (sizeof(struct fiq_dma_channel) * num_channels), &hcd->fiq_state->dma_base);
 		DWC_WARN("FIQ DMA bounce buffers: virt = 0x%08x dma = 0x%08x len=%d",
 				(unsigned int)hcd->fiq_dmab, (unsigned int)hcd->fiq_state->dma_base,
 				sizeof(struct fiq_dma_channel) * num_channels);
@@ -1092,7 +1077,7 @@ int dwc_otg_hcd_init(dwc_otg_hcd_t * hcd, dwc_otg_core_if_t * core_if)
 	 */
 	if (hcd->core_if->dma_enable) {
 		hcd->status_buf =
-		    DWC_DMA_ALLOC(DWC_OTG_HCD_STATUS_BUF_SIZE,
+		    DWC_DMA_ALLOC(dev, DWC_OTG_HCD_STATUS_BUF_SIZE,
 				  &hcd->status_buf_dma);
 	} else {
 		hcd->status_buf = DWC_ALLOC(DWC_OTG_HCD_STATUS_BUF_SIZE);
@@ -1187,6 +1172,7 @@ static void assign_and_init_hc(dwc_otg_hcd_t * hcd, dwc_otg_qh_t * qh)
 	uint32_t intr_enable;
 	unsigned long flags;
 	gintmsk_data_t gintmsk = { .d32 = 0, };
+	struct device *dev = dwc_otg_hcd_to_dev(hcd);
 
 	qtd = DWC_CIRCLEQ_FIRST(&qh->qtd_list);
 
@@ -1261,6 +1247,7 @@ static void assign_and_init_hc(dwc_otg_hcd_t * hcd, dwc_otg_qh_t * qh)
 	if (qh->do_split) {
 		uint32_t hub_addr, port_addr;
 		hc->do_split = 1;
+		hc->start_pkt_count = 1;
 		hc->xact_pos = qtd->isoc_split_pos;
 		/* We don't need to do complete splits anymore */
 //		if(fiq_fsm_enable)
@@ -1381,7 +1368,7 @@ static void assign_and_init_hc(dwc_otg_hcd_t * hcd, dwc_otg_qh_t * qh)
 			buf_size = 4096;
 		}
 		if (!qh->dw_align_buf) {
-			qh->dw_align_buf = DWC_DMA_ALLOC_ATOMIC(buf_size,
+			qh->dw_align_buf = DWC_DMA_ALLOC_ATOMIC(dev, buf_size,
 							 &qh->dw_align_buf_dma);
 			if (!qh->dw_align_buf) {
 				DWC_ERROR
@@ -1432,7 +1419,7 @@ static void assign_and_init_hc(dwc_otg_hcd_t * hcd, dwc_otg_qh_t * qh)
 		fiq_fsm_spin_unlock(&hcd->fiq_state->lock);
 		local_fiq_enable();
 	}
-	
+
 	local_irq_restore(flags);
 	hc->qh = qh;
 }
@@ -1440,6 +1427,7 @@ static void assign_and_init_hc(dwc_otg_hcd_t * hcd, dwc_otg_qh_t * qh)
 
 /**
  * fiq_fsm_transaction_suitable() - Test a QH for compatibility with the FIQ
+ * @hcd:	Pointer to the dwc_otg_hcd struct
  * @qh:	pointer to the endpoint's queue head
  *
  * Transaction start/end control flow is grafted onto the existing dwc_otg
@@ -1449,7 +1437,7 @@ static void assign_and_init_hc(dwc_otg_hcd_t * hcd, dwc_otg_qh_t * qh)
  * Returns: 0 for unsuitable, 1 implies the FIQ can be enabled for this transaction.
  */
 
-int fiq_fsm_transaction_suitable(dwc_otg_qh_t *qh)
+int fiq_fsm_transaction_suitable(dwc_otg_hcd_t *hcd, dwc_otg_qh_t *qh)
 {
 	if (qh->do_split) {
 		switch (qh->ep_type) {
@@ -1468,28 +1456,22 @@ int fiq_fsm_transaction_suitable(dwc_otg_qh_t *qh)
 		}
 	} else if (qh->ep_type == UE_ISOCHRONOUS) {
 		if (fiq_fsm_mask & (1 << 2)) {
-			/* HS ISOCH support. We test for compatibility:
+			/* ISOCH support. We test for compatibility:
 			 * - DWORD aligned buffers
 			 * - Must be at least 2 transfers (otherwise pointless to use the FIQ)
 			 * If yes, then the fsm enqueue function will handle the state machine setup.
 			 */
 			dwc_otg_qtd_t *qtd = DWC_CIRCLEQ_FIRST(&qh->qtd_list);
 			dwc_otg_hcd_urb_t *urb = qtd->urb;
-			struct dwc_otg_hcd_iso_packet_desc (*iso_descs)[0] = &urb->iso_descs;
-			int nr_iso_frames = urb->packet_count;
+			dwc_dma_t ptr;
 			int i;
-			uint32_t ptr;
 
-			if (nr_iso_frames < 2)
+			if (urb->packet_count < 2)
 				return 0;
-			for (i = 0; i < nr_iso_frames; i++) {
-				ptr = urb->dma + iso_descs[i]->offset;
-				if (ptr & 0x3) {
-					printk_ratelimited("%s: Non-Dword aligned isochronous frame offset."
-							" Cannot queue FIQ-accelerated transfer to device %d endpoint %d\n",
-							__FUNCTION__, qh->channel->dev_addr, qh->channel->ep_num);
+			for (i = 0; i < urb->packet_count; i++) {
+				ptr = urb->dma + urb->iso_descs[i].offset;
+				if (ptr & 0x3)
 					return 0;
-				}
 			}
 			return 1;
 		}
@@ -1735,8 +1717,20 @@ int fiq_fsm_queue_split_transaction(dwc_otg_hcd_t *hcd, dwc_otg_qh_t *qh)
 	int hub_addr, port_addr, frame, uframe;
 	struct fiq_channel_state *st = &hcd->fiq_state->channel[hc->hc_num];
 
-	if (st->fsm != FIQ_PASSTHROUGH)
+	/*
+	 * Non-periodic channel assignments stay in the non_periodic_active queue.
+	 * Therefore we get repeatedly called until the FIQ's done processing this channel.
+	 */
+	if (qh->channel->xfer_started == 1)
 		return 0;
+
+	if (st->fsm != FIQ_PASSTHROUGH) {
+		pr_warn_ratelimited("%s:%d: Queue called for an active channel\n", __func__, __LINE__);
+		return 0;
+	}
+
+	qh->channel->xfer_started = 1;
+
 	st->nr_errors = 0;
 
 	st->hcchar_copy.d32 = 0;
@@ -1963,7 +1957,6 @@ dwc_otg_transaction_type_e dwc_otg_hcd_select_transactions(dwc_otg_hcd_t * hcd)
 	dwc_otg_qh_t *qh;
 	int num_channels;
 	dwc_irqflags_t flags;
-	dwc_spinlock_t *channel_lock = hcd->channel_lock;
 	dwc_otg_transaction_type_e ret_val = DWC_OTG_TRANSACTION_NONE;
 
 #ifdef DEBUG_HOST_CHANNELS
@@ -1982,13 +1975,10 @@ dwc_otg_transaction_type_e dwc_otg_hcd_select_transactions(dwc_otg_hcd_t * hcd)
 
 		if (microframe_schedule) {
 			// Make sure we leave one channel for non periodic transactions.
-			DWC_SPINLOCK_IRQSAVE(channel_lock, &flags);
 			if (hcd->available_host_channels <= 1) {
-				DWC_SPINUNLOCK_IRQRESTORE(channel_lock, flags);
 				break;
 			}
 			hcd->available_host_channels--;
-			DWC_SPINUNLOCK_IRQRESTORE(channel_lock, flags);
 #ifdef DEBUG_HOST_CHANNELS
 			last_sel_trans_num_per_scheduled++;
 #endif /* DEBUG_HOST_CHANNELS */
@@ -2001,10 +1991,8 @@ dwc_otg_transaction_type_e dwc_otg_hcd_select_transactions(dwc_otg_hcd_t * hcd)
 		 * periodic assigned schedule.
 		 */
 		qh_ptr = DWC_LIST_NEXT(qh_ptr);
-		DWC_SPINLOCK_IRQSAVE(channel_lock, &flags);
 		DWC_LIST_MOVE_HEAD(&hcd->periodic_sched_assigned,
 				   &qh->qh_list_entry);
-		DWC_SPINUNLOCK_IRQRESTORE(channel_lock, flags);
 	}
 
 	/*
@@ -2042,13 +2030,10 @@ dwc_otg_transaction_type_e dwc_otg_hcd_select_transactions(dwc_otg_hcd_t * hcd)
 		}
 
 		if (microframe_schedule) {
-				DWC_SPINLOCK_IRQSAVE(channel_lock, &flags);
 				if (hcd->available_host_channels < 1) {
-					DWC_SPINUNLOCK_IRQRESTORE(channel_lock, flags);
 					break;
 				}
 				hcd->available_host_channels--;
-				DWC_SPINUNLOCK_IRQRESTORE(channel_lock, flags);
 #ifdef DEBUG_HOST_CHANNELS
 				last_sel_trans_num_nonper_scheduled++;
 #endif /* DEBUG_HOST_CHANNELS */
@@ -2061,11 +2046,8 @@ dwc_otg_transaction_type_e dwc_otg_hcd_select_transactions(dwc_otg_hcd_t * hcd)
 		 * non-periodic active schedule.
 		 */
 		qh_ptr = DWC_LIST_NEXT(qh_ptr);
-		DWC_SPINLOCK_IRQSAVE(channel_lock, &flags);
 		DWC_LIST_MOVE_HEAD(&hcd->non_periodic_sched_active,
 				   &qh->qh_list_entry);
-		DWC_SPINUNLOCK_IRQRESTORE(channel_lock, flags);
-
 
 		if (!microframe_schedule)
 			hcd->non_periodic_channels++;
@@ -2229,7 +2211,7 @@ static void process_periodic_channels(dwc_otg_hcd_t * hcd)
 			continue;
 		}
 
-		if (fiq_fsm_enable && fiq_fsm_transaction_suitable(qh)) {
+		if (fiq_fsm_enable && fiq_fsm_transaction_suitable(hcd, qh)) {
 			if (qh->do_split)
 				fiq_fsm_queue_split_transaction(hcd, qh);
 			else
@@ -2366,7 +2348,7 @@ static void process_non_periodic_channels(dwc_otg_hcd_t * hcd)
 		qh = DWC_LIST_ENTRY(hcd->non_periodic_qh_ptr, dwc_otg_qh_t,
 				    qh_list_entry);
 
-		if(fiq_fsm_enable && fiq_fsm_transaction_suitable(qh)) {
+		if(fiq_fsm_enable && fiq_fsm_transaction_suitable(hcd, qh)) {
 			fiq_fsm_queue_split_transaction(hcd, qh);
 		} else {
 			status = queue_transaction(hcd, qh->channel,
