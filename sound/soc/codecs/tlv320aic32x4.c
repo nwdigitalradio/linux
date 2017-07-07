@@ -74,6 +74,8 @@ struct aic32x4_priv {
 	struct regulator *supply_iov;
 	struct regulator *supply_dv;
 	struct regulator *supply_av;
+
+	enum snd_soc_bias_level bias_level;
 };
 
 /* 0dB min, 0.5dB steps */
@@ -316,6 +318,8 @@ static const struct snd_soc_dapm_widget aic32x4_dapm_widgets[] = {
 	SND_SOC_DAPM_INPUT("IN2_R"),
 	SND_SOC_DAPM_INPUT("IN3_L"),
 	SND_SOC_DAPM_INPUT("IN3_R"),
+	SND_SOC_DAPM_INPUT("CM_L"),
+	SND_SOC_DAPM_INPUT("CM_R"),
 };
 
 static const struct snd_soc_dapm_route aic32x4_dapm_routes[] = {
@@ -444,7 +448,24 @@ static inline int aic32x4_get_divs(int mclk, int rate)
 			return i;
 		}
 	}
-	printk(KERN_ERR "aic32x4: master clock and sample rate is not supported\n");
+	printk(KERN_ERR "aic32x4: master clock %d and sample rate %d is not supported\n", mclk, rate);
+	return -EINVAL;
+}
+
+static inline long aic32x4_get_mclk_rate(struct snd_soc_codec *codec)
+{
+	int i;
+	struct aic32x4_priv *aic32x4 = snd_soc_codec_get_drvdata(codec);
+	long mclk_rate = clk_get_rate(aic32x4->mclk);
+
+	for(i = 0; i < ARRAY_SIZE(aic32x4_divs); i++) {
+		long round_rate = clk_round_rate(aic32x4->mclk, aic32x4_divs[i].mclk);
+		if((round_rate > 0) && (abs(aic32x4_divs[i].mclk - round_rate) < 10000) &&
+		   (round_rate == mclk_rate))
+			return aic32x4_divs[i].mclk;
+	}
+
+	dev_err(codec->dev, "Unsupported master clock rate %ld", mclk_rate);
 	return -EINVAL;
 }
 
@@ -530,10 +551,13 @@ static int aic32x4_hw_params(struct snd_pcm_substream *substream,
 	struct aic32x4_priv *aic32x4 = snd_soc_codec_get_drvdata(codec);
 	u8 data;
 	int i;
+	long int mclk_rate;
 
-	i = aic32x4_get_divs(aic32x4->sysclk, params_rate(params));
+	mclk_rate = aic32x4_get_mclk_rate(codec);
+
+	i = aic32x4_get_divs(mclk_rate, params_rate(params));
 	if (i < 0) {
-		printk(KERN_ERR "aic32x4: sampling rate not supported\n");
+		dev_err(codec->dev, "Sampling rate not supported\n");
 		return i;
 	}
 
@@ -636,6 +660,9 @@ static int aic32x4_set_bias_level(struct snd_soc_codec *codec,
 	struct aic32x4_priv *aic32x4 = snd_soc_codec_get_drvdata(codec);
 	int ret;
 
+	if(aic32x4->bias_level == level)
+		return 0;
+
 	switch (level) {
 	case SND_SOC_BIAS_ON:
 		/* Switch on master clock */
@@ -697,11 +724,15 @@ static int aic32x4_set_bias_level(struct snd_soc_codec *codec,
 				    AIC32X4_PLLEN, 0);
 
 		/* Switch off master clock */
-		clk_disable_unprepare(aic32x4->mclk);
+		if(aic32x4->bias_level > SND_SOC_BIAS_STANDBY)
+			clk_disable_unprepare(aic32x4->mclk);
 		break;
 	case SND_SOC_BIAS_OFF:
 		break;
 	}
+
+	aic32x4->bias_level = level;
+
 	return 0;
 }
 
@@ -737,7 +768,7 @@ static struct snd_soc_dai_driver aic32x4_dai = {
 static int aic32x4_codec_probe(struct snd_soc_codec *codec)
 {
 	struct aic32x4_priv *aic32x4 = snd_soc_codec_get_drvdata(codec);
-	u32 tmp_reg;
+	u32 tmp_reg = 0;
 
 	if (gpio_is_valid(aic32x4->rstn_gpio)) {
 		ndelay(10);
@@ -746,48 +777,48 @@ static int aic32x4_codec_probe(struct snd_soc_codec *codec)
 
 	snd_soc_write(codec, AIC32X4_RESET, 0x01);
 
+	//  Need to wait 1ms after reset per the datasheet
+	msleep(1);
+
 	/* Power platform configuration */
-	if (aic32x4->power_cfg & AIC32X4_PWR_MICBIAS_2075_LDOIN) {
-		snd_soc_write(codec, AIC32X4_MICBIAS, AIC32X4_MICBIAS_LDOIN |
-						      AIC32X4_MICBIAS_2075V);
-	}
+	if (aic32x4->power_cfg & AIC32X4_PWR_MICBIAS_2075_LDOIN)
+		snd_soc_update_bits(codec, AIC32X4_MICBIAS,
+				    AIC32X4_MICBIAS_LDOIN | AIC32X4_MICBIAS_2075V,
+				    AIC32X4_MICBIAS_LDOIN | AIC32X4_MICBIAS_2075V);
+
 	if (aic32x4->power_cfg & AIC32X4_PWR_AVDD_DVDD_WEAK_DISABLE)
 		snd_soc_write(codec, AIC32X4_PWRCFG, AIC32X4_AVDDWEAKDISABLE);
 
-	tmp_reg = (aic32x4->power_cfg & AIC32X4_PWR_AIC32X4_LDO_ENABLE) ?
-			AIC32X4_LDOCTLEN : 0;
-	snd_soc_write(codec, AIC32X4_LDOCTL, tmp_reg);
+	if (aic32x4->power_cfg & AIC32X4_PWR_AIC32X4_LDO_ENABLE)
+		snd_soc_update_bits(codec, AIC32X4_LDOCTL, AIC32X4_LDOCTLEN,
+				AIC32X4_LDOCTLEN);
+	snd_soc_update_bits(codec, AIC32X4_LDOCTL, AIC32X4_ANALOG_BLOCKS_EN, 0);
 
-	tmp_reg = snd_soc_read(codec, AIC32X4_CMMODE);
 	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_LDOIN_RANGE_18_36)
-		tmp_reg |= AIC32X4_LDOIN_18_36;
+		snd_soc_update_bits(codec, AIC32X4_CMMODE, AIC32X4_LDOIN_18_36,
+				AIC32X4_LDOIN_18_36);
+	tmp_reg = snd_soc_read(codec, AIC32X4_CMMODE);
 	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED)
 		tmp_reg |= AIC32X4_LDOIN2HP;
+	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_125V)
+		tmp_reg |= AIC32X4_LDOIN_HP_125V;
+	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_15V)
+		tmp_reg |= AIC32X4_LDOIN_HP_15V;
+	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_HP_165V)
+		tmp_reg |= AIC32X4_LDOIN_HP_165V;
+	if (aic32x4->power_cfg & AIC32X4_PWR_CMMODE_LO_LDOIN_POWERED)
+		tmp_reg |= AIC32X4_LDOIN2LO;
 	snd_soc_write(codec, AIC32X4_CMMODE, tmp_reg);
-
-	/* Mic PGA routing */
-	if (aic32x4->micpga_routing & AIC32X4_MICPGA_ROUTE_LMIC_IN2R_10K)
-		snd_soc_write(codec, AIC32X4_LMICPGANIN,
-				AIC32X4_LMICPGANIN_IN2R_10K);
-	else
-		snd_soc_write(codec, AIC32X4_LMICPGANIN,
-				AIC32X4_LMICPGANIN_CM1L_10K);
-	if (aic32x4->micpga_routing & AIC32X4_MICPGA_ROUTE_RMIC_IN1L_10K)
-		snd_soc_write(codec, AIC32X4_RMICPGANIN,
-				AIC32X4_RMICPGANIN_IN1L_10K);
-	else
-		snd_soc_write(codec, AIC32X4_RMICPGANIN,
-				AIC32X4_RMICPGANIN_CM1R_10K);
 
 	/*
 	 * Workaround: for an unknown reason, the ADC needs to be powered up
 	 * and down for the first capture to work properly. It seems related to
 	 * a HW BUG or some kind of behavior not documented in the datasheet.
 	 */
-	tmp_reg = snd_soc_read(codec, AIC32X4_ADCSETUP);
-	snd_soc_write(codec, AIC32X4_ADCSETUP, tmp_reg |
-				AIC32X4_LADC_EN | AIC32X4_RADC_EN);
-	snd_soc_write(codec, AIC32X4_ADCSETUP, tmp_reg);
+	snd_soc_update_bits(codec, AIC32X4_ADCSETUP, AIC32X4_LADC_EN | AIC32X4_RADC_EN,
+			AIC32X4_LADC_EN | AIC32X4_RADC_EN);
+	snd_soc_update_bits(codec, AIC32X4_ADCSETUP, AIC32X4_LADC_EN | AIC32X4_RADC_EN,
+			0);
 
 	return 0;
 }
@@ -808,17 +839,64 @@ static struct snd_soc_codec_driver soc_codec_dev_aic32x4 = {
 };
 
 static int aic32x4_parse_dt(struct aic32x4_priv *aic32x4,
-		struct device_node *np)
+		struct device_node *np, struct device *dev)
 {
+	int ldo_voltage = regulator_get_voltage(aic32x4->supply_ldo);
+	int common_mode_voltage = 0;
+
 	aic32x4->swapdacs = false;
 	aic32x4->micpga_routing = 0;
 	aic32x4->rstn_gpio = of_get_named_gpio(np, "reset-gpios", 0);
+
+	if(!of_property_read_u32_index(np, "ti,common-mode-microvolt", 0, &common_mode_voltage)) {
+		switch(common_mode_voltage) {
+			case 1250000:
+				aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_125V;
+				break;
+			case 1500000:
+				aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_15V;
+				break;
+			case 1650000:
+				aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_165V;
+				break;
+			default:
+				dev_err(dev, "Invalid common mode voltage\n");
+				break;
+		}
+	}
+
+	if(of_get_property(np, "ti,avdd-weak-disable", NULL))
+		aic32x4->power_cfg |= AIC32X4_PWR_AVDD_DVDD_WEAK_DISABLE;
+	else
+		aic32x4->power_cfg &= ~(AIC32X4_PWR_AVDD_DVDD_WEAK_DISABLE);
+
+	if(!IS_ERR(aic32x4->supply_ldo)) {
+		if(ldo_voltage >= 1800000 && ldo_voltage <= 3600000) {
+			aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_LDOIN_RANGE_18_36;
+		} else if(ldo_voltage >= 1500000 && ldo_voltage < 1800000) {
+			aic32x4->power_cfg &= ~(AIC32X4_PWR_CMMODE_LDOIN_RANGE_18_36);
+		} else {
+			dev_err(dev, "LDO Voltage is out of range\n");
+			return -EPROBE_DEFER;
+		}
+
+		if(of_get_property(np, "ti,hp-ldoin-powered", NULL))
+			aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED;
+		else
+			aic32x4->power_cfg &= ~(AIC32X4_PWR_CMMODE_HP_LDOIN_POWERED);
+
+		if(of_get_property(np, "ti,lo-ldoin-powered", NULL))
+			aic32x4->power_cfg |= AIC32X4_PWR_CMMODE_LO_LDOIN_POWERED;
+		else
+			aic32x4->power_cfg &= ~(AIC32X4_PWR_CMMODE_LO_LDOIN_POWERED);
+	}
 
 	return 0;
 }
 
 static void aic32x4_disable_regulators(struct aic32x4_priv *aic32x4)
 {
+
 	regulator_disable(aic32x4->supply_iov);
 
 	if (!IS_ERR(aic32x4->supply_ldo))
@@ -831,11 +909,9 @@ static void aic32x4_disable_regulators(struct aic32x4_priv *aic32x4)
 		regulator_disable(aic32x4->supply_av);
 }
 
-static int aic32x4_setup_regulators(struct device *dev,
+static int aic32x4_configure_regulators(struct device *dev,
 		struct aic32x4_priv *aic32x4)
 {
-	int ret = 0;
-
 	aic32x4->supply_ldo = devm_regulator_get_optional(dev, "ldoin");
 	aic32x4->supply_iov = devm_regulator_get(dev, "iov");
 	aic32x4->supply_dv = devm_regulator_get_optional(dev, "dv");
@@ -868,6 +944,14 @@ static int aic32x4_setup_regulators(struct device *dev,
 				PTR_ERR(aic32x4->supply_av) == -EPROBE_DEFER)
 			return -EPROBE_DEFER;
 	}
+
+	return 0;
+}
+
+static int aic32x4_setup_regulators(struct device *dev,
+		struct aic32x4_priv *aic32x4)
+{
+	int ret = 0;
 
 	ret = regulator_enable(aic32x4->supply_iov);
 	if (ret) {
@@ -934,13 +1018,19 @@ int aic32x4_probe(struct device *dev, struct regmap *regmap)
 
 	dev_set_drvdata(dev, aic32x4);
 
+	ret = aic32x4_configure_regulators(dev, aic32x4);
+	if (ret) {
+		dev_err(dev, "Failed to configure regulators\n");
+		return ret;
+	}
+
 	if (pdata) {
 		aic32x4->power_cfg = pdata->power_cfg;
 		aic32x4->swapdacs = pdata->swapdacs;
 		aic32x4->micpga_routing = pdata->micpga_routing;
 		aic32x4->rstn_gpio = pdata->rstn_gpio;
 	} else if (np) {
-		ret = aic32x4_parse_dt(aic32x4, np);
+		ret = aic32x4_parse_dt(aic32x4, np, dev);
 		if (ret) {
 			dev_err(dev, "Failed to parse DT node\n");
 			return ret;
