@@ -11,6 +11,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	allo-digione.dtbo \
 	allo-piano-dac-pcm512x-audio.dtbo \
 	allo-piano-dac-plus-pcm512x-audio.dtbo \
+	applepi-dac.dtbo \
 	at86rf233.dtbo \
 	audioinjector-addons.dtbo \
 	audioinjector-wm8731-audio.dtbo \
@@ -25,11 +26,14 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	dwc2.dtbo \
 	enc28j60.dtbo \
 	enc28j60-spi2.dtbo \
+	exc3000.dtbo \
 	fe-pi-audio.dtbo \
 	goodix.dtbo \
 	googlevoicehat-soundcard.dtbo \
 	gpio-ir.dtbo \
+	gpio-key.dtbo \
 	gpio-poweroff.dtbo \
+	gpio-shutdown.dtbo \
 	hifiberry-amp.dtbo \
 	hifiberry-dac.dtbo \
 	hifiberry-dacplus.dtbo \
@@ -53,16 +57,20 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	justboom-dac.dtbo \
 	justboom-digi.dtbo \
 	lirc-rpi.dtbo \
+	mbed-dac.dtbo \
 	mcp23017.dtbo \
 	mcp23s17.dtbo \
 	mcp2515-can0.dtbo \
 	mcp2515-can1.dtbo \
 	mcp3008.dtbo \
+	mcp3202.dtbo \
+	media-center.dtbo \
 	midi-uart0.dtbo \
 	midi-uart1.dtbo \
 	mmc.dtbo \
 	mpu6050.dtbo \
 	mz61581.dtbo \
+	papirus.dtbo \
 	pi3-act-led.dtbo \
 	pi3-disable-bt.dtbo \
 	pi3-disable-wifi.dtbo \
@@ -109,6 +117,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	spi2-2cs.dtbo \
 	spi2-3cs.dtbo \
 	tinylcd35.dtbo \
+	uart0.dtbo \
 	uart1.dtbo \
 	udrc-boost-output.dtbo \
 	udrc.dtbo \

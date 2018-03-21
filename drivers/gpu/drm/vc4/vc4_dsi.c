@@ -29,20 +29,20 @@
  * hopefully present.
  */
 
-#include "drm_atomic_helper.h"
-#include "drm_crtc_helper.h"
-#include "drm_edid.h"
-#include "drm_mipi_dsi.h"
-#include "drm_panel.h"
-#include "linux/clk.h"
-#include "linux/clk-provider.h"
-#include "linux/completion.h"
-#include "linux/component.h"
-#include "linux/dmaengine.h"
-#include "linux/i2c.h"
-#include "linux/of_address.h"
-#include "linux/of_platform.h"
-#include "linux/pm_runtime.h"
+#include <drm/drm_atomic_helper.h>
+#include <drm/drm_crtc_helper.h>
+#include <drm/drm_edid.h>
+#include <drm/drm_mipi_dsi.h>
+#include <drm/drm_panel.h>
+#include <linux/clk.h>
+#include <linux/clk-provider.h>
+#include <linux/completion.h>
+#include <linux/component.h>
+#include <linux/dmaengine.h>
+#include <linux/i2c.h>
+#include <linux/of_address.h>
+#include <linux/of_platform.h>
+#include <linux/pm_runtime.h>
 #include "vc4_drv.h"
 #include "vc4_regs.h"
 
@@ -519,7 +519,8 @@ struct vc4_dsi {
 	/* DSI channel for the panel we're connected to. */
 	u32 channel;
 	u32 lanes;
-	enum mipi_dsi_pixel_format format;
+	u32 format;
+	u32 divider;
 	u32 mode_flags;
 
 	/* Input clock from CPRMAN to the digital PHY, for the DSI
@@ -771,16 +772,14 @@ static const struct drm_connector_helper_funcs vc4_dsi_connector_helper_funcs = 
 static struct drm_connector *vc4_dsi_connector_init(struct drm_device *dev,
 						    struct vc4_dsi *dsi)
 {
-	struct drm_connector *connector = NULL;
+	struct drm_connector *connector;
 	struct vc4_dsi_connector *dsi_connector;
-	int ret = 0;
 
 	dsi_connector = devm_kzalloc(dev->dev, sizeof(*dsi_connector),
 				     GFP_KERNEL);
-	if (!dsi_connector) {
-		ret = -ENOMEM;
-		goto fail;
-	}
+	if (!dsi_connector)
+		return ERR_PTR(-ENOMEM);
+
 	connector = &dsi_connector->base;
 
 	dsi_connector->dsi = dsi;
@@ -796,12 +795,6 @@ static struct drm_connector *vc4_dsi_connector_init(struct drm_device *dev,
 	drm_mode_connector_attach_encoder(connector, dsi->encoder);
 
 	return connector;
-
-fail:
-	if (connector)
-		vc4_dsi_connector_destroy(connector);
-
-	return ERR_PTR(ret);
 }
 
 static void vc4_dsi_encoder_destroy(struct drm_encoder *encoder)
@@ -828,23 +821,28 @@ static void vc4_dsi_latch_ulps(struct vc4_dsi *dsi, bool latch)
 /* Enters or exits Ultra Low Power State. */
 static void vc4_dsi_ulps(struct vc4_dsi *dsi, bool ulps)
 {
-	bool continuous = dsi->mode_flags & MIPI_DSI_CLOCK_NON_CONTINUOUS;
-	u32 phyc_ulps = ((continuous ? DSI_PORT_BIT(PHYC_CLANE_ULPS) : 0) |
+	bool non_continuous = dsi->mode_flags & MIPI_DSI_CLOCK_NON_CONTINUOUS;
+	u32 phyc_ulps = ((non_continuous ? DSI_PORT_BIT(PHYC_CLANE_ULPS) : 0) |
 			 DSI_PHYC_DLANE0_ULPS |
 			 (dsi->lanes > 1 ? DSI_PHYC_DLANE1_ULPS : 0) |
 			 (dsi->lanes > 2 ? DSI_PHYC_DLANE2_ULPS : 0) |
 			 (dsi->lanes > 3 ? DSI_PHYC_DLANE3_ULPS : 0));
-	u32 stat_ulps = ((continuous ? DSI1_STAT_PHY_CLOCK_ULPS : 0) |
+	u32 stat_ulps = ((non_continuous ? DSI1_STAT_PHY_CLOCK_ULPS : 0) |
 			 DSI1_STAT_PHY_D0_ULPS |
 			 (dsi->lanes > 1 ? DSI1_STAT_PHY_D1_ULPS : 0) |
 			 (dsi->lanes > 2 ? DSI1_STAT_PHY_D2_ULPS : 0) |
 			 (dsi->lanes > 3 ? DSI1_STAT_PHY_D3_ULPS : 0));
-	u32 stat_stop = ((continuous ? DSI1_STAT_PHY_CLOCK_STOP : 0) |
+	u32 stat_stop = ((non_continuous ? DSI1_STAT_PHY_CLOCK_STOP : 0) |
 			 DSI1_STAT_PHY_D0_STOP |
 			 (dsi->lanes > 1 ? DSI1_STAT_PHY_D1_STOP : 0) |
 			 (dsi->lanes > 2 ? DSI1_STAT_PHY_D2_STOP : 0) |
 			 (dsi->lanes > 3 ? DSI1_STAT_PHY_D3_STOP : 0));
 	int ret;
+	bool ulps_currently_enabled = (DSI_PORT_READ(PHY_AFEC0) &
+				       DSI_PORT_BIT(PHY_AFEC0_LATCH_ULPS));
+
+	if (ulps == ulps_currently_enabled)
+		return;
 
 	DSI_PORT_WRITE(STAT, stat_ulps);
 	DSI_PORT_WRITE(PHYC, DSI_PORT_READ(PHYC) | phyc_ulps);
@@ -914,13 +912,64 @@ static void vc4_dsi_encoder_disable(struct drm_encoder *encoder)
 	pm_runtime_put(dev);
 }
 
+/* Extends the mode's blank intervals to handle BCM2835's integer-only
+ * DSI PLL divider.
+ *
+ * On 2835, PLLD is set to 2Ghz, and may not be changed by the display
+ * driver since most peripherals are hanging off of the PLLD_PER
+ * divider.  PLLD_DSI1, which drives our DSI bit clock (and therefore
+ * the pixel clock), only has an integer divider off of DSI.
+ *
+ * To get our panel mode to refresh at the expected 60Hz, we need to
+ * extend the horizontal blank time.  This means we drive a
+ * higher-than-expected clock rate to the panel, but that's what the
+ * firmware does too.
+ */
+static bool vc4_dsi_encoder_mode_fixup(struct drm_encoder *encoder,
+				       const struct drm_display_mode *mode,
+				       struct drm_display_mode *adjusted_mode)
+{
+	struct vc4_dsi_encoder *vc4_encoder = to_vc4_dsi_encoder(encoder);
+	struct vc4_dsi *dsi = vc4_encoder->dsi;
+	struct clk *phy_parent = clk_get_parent(dsi->pll_phy_clock);
+	unsigned long parent_rate = clk_get_rate(phy_parent);
+	unsigned long pixel_clock_hz = mode->clock * 1000;
+	unsigned long pll_clock = pixel_clock_hz * dsi->divider;
+	int divider;
+
+	/* Find what divider gets us a faster clock than the requested
+	 * pixel clock.
+	 */
+	for (divider = 1; divider < 8; divider++) {
+		if (parent_rate / divider < pll_clock) {
+			divider--;
+			break;
+		}
+	}
+
+	/* Now that we've picked a PLL divider, calculate back to its
+	 * pixel clock.
+	 */
+	pll_clock = parent_rate / divider;
+	pixel_clock_hz = pll_clock / dsi->divider;
+
+	adjusted_mode->clock = pixel_clock_hz / 1000;
+
+	/* Given the new pixel clock, adjust HFP to keep vrefresh the same. */
+	adjusted_mode->htotal = adjusted_mode->clock * mode->htotal /
+				mode->clock;
+	adjusted_mode->hsync_end += adjusted_mode->htotal - mode->htotal;
+	adjusted_mode->hsync_start += adjusted_mode->htotal - mode->htotal;
+
+	return true;
+}
+
 static void vc4_dsi_encoder_enable(struct drm_encoder *encoder)
 {
-	struct drm_display_mode *mode = &encoder->crtc->mode;
+	struct drm_display_mode *mode = &encoder->crtc->state->adjusted_mode;
 	struct vc4_dsi_encoder *vc4_encoder = to_vc4_dsi_encoder(encoder);
 	struct vc4_dsi *dsi = vc4_encoder->dsi;
 	struct device *dev = &dsi->pdev->dev;
-	u32 format = 0, divider = 0;
 	bool debug_dump_regs = false;
 	unsigned long hs_clock;
 	u32 ui_ns;
@@ -948,26 +997,11 @@ static void vc4_dsi_encoder_enable(struct drm_encoder *encoder)
 		vc4_dsi_dump_regs(dsi);
 	}
 
-	switch (dsi->format) {
-	case MIPI_DSI_FMT_RGB888:
-		format = DSI_PFORMAT_RGB888;
-		divider = 24 / dsi->lanes;
-		break;
-	case MIPI_DSI_FMT_RGB666:
-		format = DSI_PFORMAT_RGB666;
-		divider = 24 / dsi->lanes;
-		break;
-	case MIPI_DSI_FMT_RGB666_PACKED:
-		format = DSI_PFORMAT_RGB666_PACKED;
-		divider = 18 / dsi->lanes;
-		break;
-	case MIPI_DSI_FMT_RGB565:
-		format = DSI_PFORMAT_RGB565;
-		divider = 16 / dsi->lanes;
-		break;
-	}
-
-	phy_clock = pixel_clock_hz * divider;
+	/* Round up the clk_set_rate() request slightly, since
+	 * PLLD_DSI1 is an integer divider and its rate selection will
+	 * never round up.
+	 */
+	phy_clock = (pixel_clock_hz + 1000) * dsi->divider;
 	ret = clk_set_rate(dsi->pll_phy_clock, phy_clock);
 	if (ret) {
 		dev_err(&dsi->pdev->dev,
@@ -1102,7 +1136,17 @@ static void vc4_dsi_encoder_enable(struct drm_encoder *encoder)
 				     DSI_HS_DLT4_TRAIL) |
 		       VC4_SET_FIELD(0, DSI_HS_DLT4_ANLAT));
 
-	DSI_PORT_WRITE(HS_DLT5, VC4_SET_FIELD(dsi_hs_timing(ui_ns, 1000, 5000),
+	/* T_INIT is how long STOP is driven after power-up to
+	 * indicate to the slave (also coming out of power-up) that
+	 * master init is complete, and should be greater than the
+	 * maximum of two value: T_INIT,MASTER and T_INIT,SLAVE.  The
+	 * D-PHY spec gives a minimum 100us for T_INIT,MASTER and
+	 * T_INIT,SLAVE, while allowing protocols on top of it to give
+	 * greater minimums.  The vc4 firmware uses an extremely
+	 * conservative 5ms, and we maintain that here.
+	 */
+	DSI_PORT_WRITE(HS_DLT5, VC4_SET_FIELD(dsi_hs_timing(ui_ns,
+							    5 * 1000 * 1000, 0),
 					      DSI_HS_DLT5_INIT));
 
 	DSI_PORT_WRITE(HS_DLT6,
@@ -1142,8 +1186,9 @@ static void vc4_dsi_encoder_enable(struct drm_encoder *encoder)
 
 	if (dsi->mode_flags & MIPI_DSI_MODE_VIDEO) {
 		DSI_PORT_WRITE(DISP0_CTRL,
-			       VC4_SET_FIELD(divider, DSI_DISP0_PIX_CLK_DIV) |
-			       VC4_SET_FIELD(format, DSI_DISP0_PFORMAT) |
+			       VC4_SET_FIELD(dsi->divider,
+					     DSI_DISP0_PIX_CLK_DIV) |
+			       VC4_SET_FIELD(dsi->format, DSI_DISP0_PFORMAT) |
 			       VC4_SET_FIELD(DSI_DISP0_LP_STOP_PERFRAME,
 					     DSI_DISP0_LP_STOP_CTRL) |
 			       DSI_DISP0_ST_END |
@@ -1355,8 +1400,30 @@ static int vc4_dsi_host_attach(struct mipi_dsi_host *host,
 
 	dsi->lanes = device->lanes;
 	dsi->channel = device->channel;
-	dsi->format = device->format;
 	dsi->mode_flags = device->mode_flags;
+
+	switch (device->format) {
+	case MIPI_DSI_FMT_RGB888:
+		dsi->format = DSI_PFORMAT_RGB888;
+		dsi->divider = 24 / dsi->lanes;
+		break;
+	case MIPI_DSI_FMT_RGB666:
+		dsi->format = DSI_PFORMAT_RGB666;
+		dsi->divider = 24 / dsi->lanes;
+		break;
+	case MIPI_DSI_FMT_RGB666_PACKED:
+		dsi->format = DSI_PFORMAT_RGB666_PACKED;
+		dsi->divider = 18 / dsi->lanes;
+		break;
+	case MIPI_DSI_FMT_RGB565:
+		dsi->format = DSI_PFORMAT_RGB565;
+		dsi->divider = 16 / dsi->lanes;
+		break;
+	default:
+		dev_err(&dsi->pdev->dev, "Unknown DSI format: %d.\n",
+			dsi->format);
+		return 0;
+	}
 
 	if (!(dsi->mode_flags & MIPI_DSI_MODE_VIDEO)) {
 		dev_err(&dsi->pdev->dev,
@@ -1405,6 +1472,7 @@ static const struct mipi_dsi_host_ops vc4_dsi_host_ops = {
 static const struct drm_encoder_helper_funcs vc4_dsi_encoder_helper_funcs = {
 	.disable = vc4_dsi_encoder_disable,
 	.enable = vc4_dsi_encoder_enable,
+	.mode_fixup = vc4_dsi_encoder_mode_fixup,
 };
 
 static const struct of_device_id vc4_dsi_dt_match[] = {
@@ -1423,6 +1491,27 @@ static void dsi_handle_error(struct vc4_dsi *dsi,
 	*ret = IRQ_HANDLED;
 }
 
+/*
+ * Initial handler for port 1 where we need the reg_dma workaround.
+ * The register DMA writes sleep, so we can't do it in the top half.
+ * Instead we use IRQF_ONESHOT so that the IRQ gets disabled in the
+ * parent interrupt contrller until our interrupt thread is done.
+ */
+static irqreturn_t vc4_dsi_irq_defer_to_thread_handler(int irq, void *data)
+{
+	struct vc4_dsi *dsi = data;
+	u32 stat = DSI_PORT_READ(INT_STAT);
+
+	if (!stat)
+		return IRQ_NONE;
+
+	return IRQ_WAKE_THREAD;
+}
+
+/*
+ * Normal IRQ handler for port 0, or the threaded IRQ handler for port
+ * 1 where we need the reg_dma workaround.
+ */
 static irqreturn_t vc4_dsi_irq_handler(int irq, void *data)
 {
 	struct vc4_dsi *dsi = data;
@@ -1461,8 +1550,9 @@ static irqreturn_t vc4_dsi_irq_handler(int irq, void *data)
 }
 
 /**
- * Exposes clocks generated by the analog PHY that are consumed by
- * CPRMAN (clk-bcm2835.c).
+ * vc4_dsi_init_phy_clocks - Exposes clocks generated by the analog
+ * PHY that are consumed by CPRMAN (clk-bcm2835.c).
+ * @dsi: DSI encoder
  */
 static int
 vc4_dsi_init_phy_clocks(struct vc4_dsi *dsi)
@@ -1605,8 +1695,15 @@ static int vc4_dsi_bind(struct device *dev, struct device *master, void *data)
 	/* Clear any existing interrupt state. */
 	DSI_PORT_WRITE(INT_STAT, DSI_PORT_READ(INT_STAT));
 
-	ret = devm_request_irq(dev, platform_get_irq(pdev, 0),
-			       vc4_dsi_irq_handler, 0, "vc4 dsi", dsi);
+	if (dsi->reg_dma_mem)
+		ret = devm_request_threaded_irq(dev, platform_get_irq(pdev, 0),
+						vc4_dsi_irq_defer_to_thread_handler,
+						vc4_dsi_irq_handler,
+						IRQF_ONESHOT,
+						"vc4 dsi", dsi);
+	else
+		ret = devm_request_irq(dev, platform_get_irq(pdev, 0),
+				       vc4_dsi_irq_handler, 0, "vc4 dsi", dsi);
 	if (ret) {
 		if (ret != -EPROBE_DEFER)
 			dev_err(dev, "Failed to get interrupt: %d\n", ret);
@@ -1691,9 +1788,6 @@ static void vc4_dsi_unbind(struct device *dev, struct device *master,
 	vc4_dsi_encoder_destroy(dsi->encoder);
 
 	mipi_dsi_host_unregister(&dsi->dsi_host);
-
-	clk_disable_unprepare(dsi->pll_phy_clock);
-	clk_disable_unprepare(dsi->escape_clock);
 
 	if (dsi->port == 1)
 		vc4->dsi1 = NULL;

@@ -51,6 +51,7 @@
 #include <linux/of_dma.h>
 #include <linux/time.h>
 #include <linux/workqueue.h>
+#include <linux/highmem.h>
 #include <soc/bcm2835/raspberrypi-firmware.h>
 
 #define DRIVER_NAME "sdhost-bcm2835"
@@ -1515,8 +1516,7 @@ void bcm2835_sdhost_set_clock(struct bcm2835_host *host, unsigned int clock)
 	if (host->debug)
 		pr_info("%s: set_clock(%d)\n", mmc_hostname(host->mmc), clock);
 
-	if ((host->overclock_50 > 50) &&
-	    (clock == 50*MHZ))
+	if (host->overclock_50 && (clock == 50*MHZ))
 		clock = host->overclock_50 * MHZ + (MHZ - 1);
 
 	/* The SDCDIV register has 11 bits, and holds (div - 2).
@@ -1890,7 +1890,8 @@ int bcm2835_sdhost_add_host(struct bcm2835_host *host)
 
 	mmc = host->mmc;
 
-	mmc->f_max = host->max_clk;
+	if (!mmc->f_max || mmc->f_max > host->max_clk)
+		mmc->f_max = host->max_clk;
 	mmc->f_min = host->max_clk / SDCDIV_MAX_CDIV;
 
 	mmc->max_busy_timeout =  (~(unsigned int)0)/(mmc->f_max/1000);

@@ -1,5 +1,5 @@
 /* Downstream bcm283x.dtsi diff */
-#include "dt-bindings/power/raspberrypi-power.h"
+#include <dt-bindings/power/raspberrypi-power.h>
 
 / {
 	chosen {
@@ -8,13 +8,7 @@
 
 	soc: soc {
 
-		/delete-node/ timer@7e003000;
-
 		watchdog: watchdog@7e100000 {
-			/* Add alias */
-		};
-
-		cprman: cprman@7e101000 {
 			/* Add alias */
 		};
 
@@ -24,6 +18,11 @@
 
 		gpio@7e200000 { /* gpio */
 			interrupts = <2 17>, <2 18>;
+		};
+
+		serial@7e201000 { /* uart0 */
+			/* Enable CTS bug workaround */
+			cts-event-workaround;
 		};
 
 		sdhost: sdhost@7e202000 {
@@ -103,7 +102,7 @@
 			reg = <0x7e600000 0x100>;
 			interrupts = <2 16>;
 			clocks = <&clocks BCM2835_CLOCK_SMI>;
-			assigned-clocks = <&cprman BCM2835_CLOCK_SMI>;
+			assigned-clocks = <&clocks BCM2835_CLOCK_SMI>;
 			assigned-clock-rates = <125000000>;
 			dmas = <&dma 4>;
 			dma-names = "rx-tx";
@@ -133,11 +132,6 @@
 			status = "disabled";
 		};
 
-		gpu: gpu {
-			/* Add alias */
-			status = "disabled";
-		};
-
 		i2c_dsi: i2cdsi {
 			/* We have to use i2c-gpio because the
 			 * firmware is also polling another device
@@ -160,6 +154,13 @@
 			};
 		};
 
+		axiperf: axiperf {
+			compatible = "brcm,bcm2835-axiperf";
+			reg = <0x7e009800 0x100>,
+			      <0x7ee08000 0x100>;
+			firmware = <&firmware>;
+			status = "disabled";
+		};
 	};
 
 	vdd_5v0_reg: fixedregulator_5v0 {
@@ -181,4 +182,8 @@
 
 &dsi1 {
 	power-domains = <&power RPI_POWER_DOMAIN_DSI1>;
+};
+
+&vc4 {
+	status = "disabled";
 };

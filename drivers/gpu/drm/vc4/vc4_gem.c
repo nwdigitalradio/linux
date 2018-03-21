@@ -118,7 +118,7 @@ vc4_get_hang_state_ioctl(struct drm_device *dev, void *data,
 		bo_state[i].size = vc4_bo->base.base.size;
 	}
 
-	if (copy_to_user((void __user *)(uintptr_t)get_state->bo,
+	if (copy_to_user(u64_to_user_ptr(get_state->bo),
 			 bo_state,
 			 state->bo_count * sizeof(*bo_state)))
 		ret = -EFAULT;
@@ -511,9 +511,18 @@ vc4_queue_submit(struct drm_device *dev, struct vc4_exec_info *exec)
 }
 
 /**
- * Looks up a bunch of GEM handles for BOs and stores the array for
- * use in the command validator that actually writes relocated
- * addresses pointing to them.
+ * vc4_cl_lookup_bos() - Sets up exec->bo[] with the GEM objects
+ * referenced by the job.
+ * @dev: DRM device
+ * @file_priv: DRM file for this fd
+ * @exec: V3D job being set up
+ *
+ * The command validator needs to reference BOs by their index within
+ * the submitted job's BO list.  This does the validation of the job's
+ * BO list and reference counting for the lifetime of the job.
+ *
+ * Note that this function doesn't need to unreference the BOs on
+ * failure, because that will happen at vc4_complete_exec() time.
  */
 static int
 vc4_cl_lookup_bos(struct drm_device *dev,
@@ -531,7 +540,7 @@ vc4_cl_lookup_bos(struct drm_device *dev,
 		/* See comment on bo_index for why we have to check
 		 * this.
 		 */
-		DRM_ERROR("Rendering requires BOs to validate\n");
+		DRM_DEBUG("Rendering requires BOs to validate\n");
 		return -EINVAL;
 	}
 
@@ -549,8 +558,7 @@ vc4_cl_lookup_bos(struct drm_device *dev,
 		goto fail;
 	}
 
-	if (copy_from_user(handles,
-			   (void __user *)(uintptr_t)args->bo_handles,
+	if (copy_from_user(handles, u64_to_user_ptr(args->bo_handles),
 			   exec->bo_count * sizeof(uint32_t))) {
 		ret = -EFAULT;
 		DRM_ERROR("Failed to copy in GEM handles\n");
@@ -562,7 +570,7 @@ vc4_cl_lookup_bos(struct drm_device *dev,
 		struct drm_gem_object *bo = idr_find(&file_priv->object_idr,
 						     handles[i]);
 		if (!bo) {
-			DRM_ERROR("Failed to look up GEM BO %d: %d\n",
+			DRM_DEBUG("Failed to look up GEM BO %d: %d\n",
 				  i, handles[i]);
 			ret = -EINVAL;
 			spin_unlock(&file_priv->table_lock);
@@ -600,7 +608,7 @@ vc4_get_bcl(struct drm_device *dev, struct vc4_exec_info *exec)
 	    args->shader_rec_count >= (UINT_MAX /
 					  sizeof(struct vc4_shader_state)) ||
 	    temp_size < exec_size) {
-		DRM_ERROR("overflow in exec arguments\n");
+		DRM_DEBUG("overflow in exec arguments\n");
 		ret = -EINVAL;
 		goto fail;
 	}
@@ -626,27 +634,27 @@ vc4_get_bcl(struct drm_device *dev, struct vc4_exec_info *exec)
 	exec->shader_state_size = args->shader_rec_count;
 
 	if (copy_from_user(bin,
-			   (void __user *)(uintptr_t)args->bin_cl,
+			   u64_to_user_ptr(args->bin_cl),
 			   args->bin_cl_size)) {
 		ret = -EFAULT;
 		goto fail;
 	}
 
 	if (copy_from_user(exec->shader_rec_u,
-			   (void __user *)(uintptr_t)args->shader_rec,
+			   u64_to_user_ptr(args->shader_rec),
 			   args->shader_rec_size)) {
 		ret = -EFAULT;
 		goto fail;
 	}
 
 	if (copy_from_user(exec->uniforms_u,
-			   (void __user *)(uintptr_t)args->uniforms,
+			   u64_to_user_ptr(args->uniforms),
 			   args->uniforms_size)) {
 		ret = -EFAULT;
 		goto fail;
 	}
 
-	bo = vc4_bo_create(dev, exec_size, true);
+	bo = vc4_bo_create(dev, exec_size, true, VC4_BO_TYPE_BCL);
 	if (IS_ERR(bo)) {
 		DRM_ERROR("Couldn't allocate BO for binning\n");
 		ret = PTR_ERR(bo);
@@ -839,7 +847,7 @@ vc4_wait_bo_ioctl(struct drm_device *dev, void *data,
 
 	gem_obj = drm_gem_object_lookup(file_priv, args->handle);
 	if (!gem_obj) {
-		DRM_ERROR("Failed to look up GEM BO %d\n", args->handle);
+		DRM_DEBUG("Failed to look up GEM BO %d\n", args->handle);
 		return -EINVAL;
 	}
 	bo = to_vc4_bo(gem_obj);
@@ -852,9 +860,16 @@ vc4_wait_bo_ioctl(struct drm_device *dev, void *data,
 }
 
 /**
- * Submits a command list to the VC4.
+ * vc4_submit_cl_ioctl() - Submits a job (frame) to the VC4.
+ * @dev: DRM device
+ * @data: ioctl argument
+ * @file_priv: DRM file for this fd
  *
- * This is what is called batchbuffer emitting on other hardware.
+ * This is the main entrypoint for userspace to submit a 3D frame to
+ * the GPU.  Userspace provides the binner command list (if
+ * applicable), and the kernel sets up the render command list to draw
+ * to the framebuffer described in the ioctl, using the command lists
+ * that the 3D engine's binner will produce.
  */
 int
 vc4_submit_cl_ioctl(struct drm_device *dev, void *data,
@@ -866,7 +881,7 @@ vc4_submit_cl_ioctl(struct drm_device *dev, void *data,
 	int ret = 0;
 
 	if ((args->flags & ~VC4_SUBMIT_CL_USE_CLEAR_COLOR) != 0) {
-		DRM_ERROR("Unknown flags: 0x%02x\n", args->flags);
+		DRM_DEBUG("Unknown flags: 0x%02x\n", args->flags);
 		return -EINVAL;
 	}
 
@@ -877,13 +892,16 @@ vc4_submit_cl_ioctl(struct drm_device *dev, void *data,
 	}
 
 	mutex_lock(&vc4->power_lock);
-	if (vc4->power_refcount++ == 0)
+	if (vc4->power_refcount++ == 0) {
 		ret = pm_runtime_get_sync(&vc4->v3d->pdev->dev);
-	mutex_unlock(&vc4->power_lock);
-	if (ret < 0) {
-		kfree(exec);
-		return ret;
+		if (ret < 0) {
+			mutex_unlock(&vc4->power_lock);
+			vc4->power_refcount--;
+			kfree(exec);
+			return ret;
+		}
 	}
+	mutex_unlock(&vc4->power_lock);
 
 	exec->args = args;
 	INIT_LIST_HEAD(&exec->unref_list);
@@ -964,6 +982,4 @@ vc4_gem_destroy(struct drm_device *dev)
 
 	if (vc4->hang_state)
 		vc4_free_hang_state(dev, vc4->hang_state);
-
-	vc4_bo_cache_destroy(dev);
 }

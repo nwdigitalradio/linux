@@ -7,10 +7,7 @@
 		ranges = <0x7e000000 0x3f000000 0x01000000>,
 		         <0x40000000 0x40000000 0x00040000>;
 
-		syscon@40000000 {
-			compatible = "brcm,bcm2836-arm-local", "syscon";
-			reg = <0x40000000 0x100>;
-		};
+		/delete-node/ timer@7e003000;
 	};
 
 	__overrides__ {

@@ -1384,6 +1384,7 @@ static bool pl011_tx_char(struct uart_amba_port *uap, unsigned char c,
 		return false; /* unable to transmit character */
 
 	pl011_write(c, uap, REG_DR);
+	mb();
 	uap->port.icount.tx++;
 
 	return true;
@@ -2020,9 +2021,11 @@ pl011_set_termios(struct uart_port *port, struct ktermios *termios,
 
 		old_cr |= UART011_CR_CTSEN;
 		uap->autorts = true;
+		port->status |= UPSTAT_AUTOCTS;
 	} else {
 		old_cr &= ~(UART011_CR_CTSEN | UART011_CR_RTSEN);
 		uap->autorts = false;
+		port->status &= ~UPSTAT_AUTOCTS;
 	}
 
 	if (uap->vendor->oversampling) {
@@ -2522,6 +2525,11 @@ static int pl011_probe(struct amba_device *dev, const struct amba_id *id)
 	uap->clk = devm_clk_get(&dev->dev, NULL);
 	if (IS_ERR(uap->clk))
 		return PTR_ERR(uap->clk);
+
+	if (of_property_read_bool(dev->dev.of_node, "cts-event-workaround")) {
+	    vendor->cts_event_workaround = true;
+	    dev_info(&dev->dev, "cts_event_workaround enabled\n");
+	}
 
 	uap->reg_offset = vendor->reg_offset;
 	uap->vendor = vendor;

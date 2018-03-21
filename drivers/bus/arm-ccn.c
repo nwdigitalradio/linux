@@ -1274,11 +1274,16 @@ static int arm_ccn_pmu_init(struct arm_ccn *ccn)
 		int len = snprintf(NULL, 0, "ccn_%d", ccn->dt.id);
 
 		name = devm_kzalloc(ccn->dev, len + 1, GFP_KERNEL);
+		if (!name) {
+			err = -ENOMEM;
+			goto error_choose_name;
+		}
 		snprintf(name, len + 1, "ccn_%d", ccn->dt.id);
 	}
 
 	/* Perf driver registration */
 	ccn->dt.pmu = (struct pmu) {
+		.module = THIS_MODULE,
 		.attr_groups = arm_ccn_pmu_attr_groups,
 		.task_ctx_nr = perf_invalid_context,
 		.event_init = arm_ccn_pmu_event_init,
@@ -1300,7 +1305,7 @@ static int arm_ccn_pmu_init(struct arm_ccn *ccn)
 	}
 
 	/* Pick one CPU which we will use to collect data from CCN... */
-	cpumask_set_cpu(smp_processor_id(), &ccn->dt.cpu);
+	cpumask_set_cpu(get_cpu(), &ccn->dt.cpu);
 
 	/* Also make sure that the overflow interrupt is handled by this CPU */
 	if (ccn->irq) {
@@ -1317,10 +1322,13 @@ static int arm_ccn_pmu_init(struct arm_ccn *ccn)
 
 	cpuhp_state_add_instance_nocalls(CPUHP_AP_PERF_ARM_CCN_ONLINE,
 					 &ccn->dt.node);
+	put_cpu();
 	return 0;
 
 error_pmu_register:
 error_set_affinity:
+	put_cpu();
+error_choose_name:
 	ida_simple_remove(&arm_ccn_pmu_ida, ccn->dt.id);
 	for (i = 0; i < ccn->num_xps; i++)
 		writel(0, ccn->xp[i].base + CCN_XP_DT_CONTROL);
@@ -1581,8 +1589,8 @@ static int __init arm_ccn_init(void)
 
 static void __exit arm_ccn_exit(void)
 {
-	cpuhp_remove_multi_state(CPUHP_AP_PERF_ARM_CCN_ONLINE);
 	platform_driver_unregister(&arm_ccn_driver);
+	cpuhp_remove_multi_state(CPUHP_AP_PERF_ARM_CCN_ONLINE);
 }
 
 module_init(arm_ccn_init);

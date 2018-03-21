@@ -14,12 +14,12 @@
  * crtc, HDMI encoder).
  */
 
-#include "drm_crtc.h"
-#include "drm_atomic.h"
-#include "drm_atomic_helper.h"
-#include "drm_crtc_helper.h"
-#include "drm_plane_helper.h"
-#include "drm_fb_cma_helper.h"
+#include <drm/drm_crtc.h>
+#include <drm/drm_atomic.h>
+#include <drm/drm_atomic_helper.h>
+#include <drm/drm_crtc_helper.h>
+#include <drm/drm_plane_helper.h>
+#include <drm/drm_fb_cma_helper.h>
 #include "vc4_drv.h"
 
 static void vc4_output_poll_changed(struct drm_device *dev)
@@ -216,7 +216,7 @@ static struct drm_framebuffer *vc4_fb_create(struct drm_device *dev,
 
 		gem_obj = drm_gem_object_lookup(file_priv, mode_cmd->handles[0]);
 		if (!gem_obj) {
-			DRM_ERROR("Failed to look up GEM BO %d\n",
+			DRM_DEBUG("Failed to look up GEM BO %d\n",
 				  mode_cmd->handles[0]);
 			return ERR_PTR(-ENOENT);
 

@@ -31,6 +31,7 @@
 #include <linux/mdio.h>
 #include <net/ip6_checksum.h>
 #include <linux/microchipphy.h>
+#include <linux/of_net.h>
 #include "lan78xx.h"
 
 #define DRIVER_AUTHOR	"WOOJUNG HUH <woojung.huh@microchip.com>"
@@ -873,7 +874,8 @@ static int lan78xx_read_otp(struct lan78xx_net *dev, u32 offset,
 			offset += 0x100;
 		else
 			ret = -EINVAL;
-		ret = lan78xx_read_raw_otp(dev, offset, length, data);
+		if (!ret)
+			ret = lan78xx_read_raw_otp(dev, offset, length, data);
 	}
 
 	return ret;
@@ -1638,6 +1640,14 @@ static void lan78xx_init_mac_address(struct lan78xx_net *dev)
 	u32 addr_lo, addr_hi;
 	int ret;
 	u8 addr[6];
+	const u8 *mac_addr;
+
+	/* maybe the boot loader passed the MAC address in devicetree */
+	mac_addr = of_get_mac_address(dev->udev->dev.of_node);
+	if (mac_addr) {
+		ether_addr_copy(addr, mac_addr);
+		goto set_mac_addr;
+	}
 
 	ret = lan78xx_read_reg(dev, RX_ADDRL, &addr_lo);
 	ret = lan78xx_read_reg(dev, RX_ADDRH, &addr_hi);
@@ -1666,6 +1676,7 @@ static void lan78xx_init_mac_address(struct lan78xx_net *dev)
 					  "MAC address set to random addr");
 			}
 
+set_mac_addr:
 			addr_lo = addr[0] | (addr[1] << 8) |
 				  (addr[2] << 16) | (addr[3] << 24);
 			addr_hi = addr[4] | (addr[5] << 8);
@@ -1838,6 +1849,7 @@ static int lan78xx_phy_init(struct lan78xx_net *dev)
 {
 	int ret;
 	u32 mii_adv;
+	u32 led_modes;
 	struct phy_device *phydev = dev->net->phydev;
 
 	phydev = phy_find_first(dev->mdiobus);
@@ -1876,6 +1888,19 @@ static int lan78xx_phy_init(struct lan78xx_net *dev)
 	phydev->advertising &= ~(ADVERTISED_Pause | ADVERTISED_Asym_Pause);
 	mii_adv = (u32)mii_advertise_flowctrl(dev->fc_request_control);
 	phydev->advertising |= mii_adv_to_ethtool_adv_t(mii_adv);
+
+	/* Change LED defaults:
+	 *   orange = link1000/activity
+	 *   green  = link10/link100/activity
+	 * led: 0=link/activity          1=link1000/activity
+	 *      2=link100/activity       3=link10/activity
+	 *      4=link100/1000/activity  5=link10/1000/activity
+	 *      6=link10/100/activity    14=off    15=on
+	 */
+	led_modes = phy_read(phydev, 0x1d);
+	led_modes &= ~0xff;
+	led_modes |= (1 << 0) | (6 << 4);
+	(void)phy_write(phydev, 0x1d, led_modes);
 
 	genphy_config_aneg(phydev);
 
@@ -2197,6 +2222,7 @@ static int lan78xx_reset(struct lan78xx_net *dev)
 		buf = DEFAULT_BURST_CAP_SIZE / FS_USB_PKT_SIZE;
 		dev->rx_urb_size = DEFAULT_BURST_CAP_SIZE;
 		dev->rx_qlen = 4;
+		dev->tx_qlen = 4;
 	}
 
 	ret = lan78xx_write_reg(dev, BURST_CAP, buf);
@@ -2204,6 +2230,12 @@ static int lan78xx_reset(struct lan78xx_net *dev)
 
 	ret = lan78xx_read_reg(dev, HW_CFG, &buf);
 	buf |= HW_CFG_MEF_;
+
+	/* If no valid EEPROM and no valid OTP, enable the LEDs by default */
+	if (lan78xx_read_eeprom(dev, 0, 0, NULL) &&
+	    lan78xx_read_otp(dev, 0, 0, NULL))
+	    buf |= HW_CFG_LED0_EN_ | HW_CFG_LED1_EN_;
+
 	ret = lan78xx_write_reg(dev, HW_CFG, buf);
 
 	ret = lan78xx_read_reg(dev, USB_CFG0, &buf);
@@ -2299,7 +2331,7 @@ static void lan78xx_init_stats(struct lan78xx_net *dev)
 	dev->stats.rollover_max.eee_tx_lpi_transitions = 0xFFFFFFFF;
 	dev->stats.rollover_max.eee_tx_lpi_time = 0xFFFFFFFF;
 
-	lan78xx_defer_kevent(dev, EVENT_STAT_UPDATE);
+	set_bit(EVENT_STAT_UPDATE, &dev->flags);
 }
 
 static int lan78xx_open(struct net_device *net)
@@ -2318,6 +2350,22 @@ static int lan78xx_open(struct net_device *net)
 	ret = lan78xx_phy_init(dev);
 	if (ret < 0)
 		goto done;
+
+	if (of_property_read_bool(dev->udev->dev.of_node,
+				  "microchip,eee-enabled")) {
+		struct ethtool_eee edata;
+		memset(&edata, 0, sizeof(edata));
+		edata.cmd = ETHTOOL_SEEE;
+		edata.advertised = ADVERTISED_1000baseT_Full |
+				   ADVERTISED_100baseT_Full;
+		edata.eee_enabled = true;
+		edata.tx_lpi_enabled = true;
+		if (of_property_read_u32(dev->udev->dev.of_node,
+					 "microchip,tx-lpi-timer",
+					 &edata.tx_lpi_timer))
+			edata.tx_lpi_timer = 600; /* non-aggressive */
+		(void)lan78xx_set_eee(net, &edata);
+	}
 
 	/* for Link Check */
 	if (dev->urb_intr) {
@@ -2419,14 +2467,9 @@ static struct sk_buff *lan78xx_tx_prep(struct lan78xx_net *dev,
 {
 	u32 tx_cmd_a, tx_cmd_b;
 
-	if (skb_headroom(skb) < TX_OVERHEAD) {
-		struct sk_buff *skb2;
-
-		skb2 = skb_copy_expand(skb, TX_OVERHEAD, 0, flags);
+	if (skb_cow_head(skb, TX_OVERHEAD)) {
 		dev_kfree_skb_any(skb);
-		skb = skb2;
-		if (!skb)
-			return NULL;
+		return NULL;
 	}
 
 	if (lan78xx_linearize(skb) < 0)

@@ -115,6 +115,7 @@ struct bcm2835_host {
 
 	bool					have_dma;
 	bool					use_dma;
+	bool					wait_for_dma;
 	/*end of DMA part*/
 
 	int						max_delay;	/* maximum length of time spent waiting */
@@ -341,6 +342,8 @@ static void bcm2835_mmc_dma_complete(void *param)
 
 	spin_lock_irqsave(&host->lock, flags);
 
+	host->use_dma = false;
+
 	if (host->data && !(host->data->flags & MMC_DATA_WRITE)) {
 		/* otherwise handled in SDHCI IRQ */
 		dma_chan = host->dma_chan_rxtx;
@@ -351,6 +354,9 @@ static void bcm2835_mmc_dma_complete(void *param)
 		     dir_data);
 
 		bcm2835_mmc_finish_data(host);
+	} else if (host->wait_for_dma) {
+		host->wait_for_dma = false;
+		tasklet_schedule(&host->finish_tasklet);
 	}
 
 	spin_unlock_irqrestore(&host->lock, flags);
@@ -690,6 +696,7 @@ void bcm2835_mmc_send_command(struct bcm2835_host *host, struct mmc_command *cmd
 	mod_timer(&host->timer, timeout);
 
 	host->cmd = cmd;
+	host->use_dma = false;
 
 	bcm2835_mmc_prepare_data(host, cmd);
 
@@ -759,8 +766,11 @@ static void bcm2835_mmc_finish_data(struct bcm2835_host *host)
 		}
 
 		bcm2835_mmc_send_command(host, data->stop);
-	} else
+	} else if (host->use_dma) {
+		host->wait_for_dma = true;
+	} else {
 		tasklet_schedule(&host->finish_tasklet);
+	}
 }
 
 static void bcm2835_mmc_finish_command(struct bcm2835_host *host)
@@ -1300,8 +1310,8 @@ static int bcm2835_mmc_add_host(struct bcm2835_host *host)
 
 	host->clk_mul = 0;
 
-	mmc->f_max = host->max_clk;
-	mmc->f_max = host->max_clk;
+	if (!mmc->f_max || mmc->f_max > host->max_clk)
+		mmc->f_max = host->max_clk;
 	mmc->f_min = host->max_clk / SDHCI_MAX_DIV_SPEC_300;
 
 	/* SDHCI_QUIRK_DATA_TIMEOUT_USES_SDCLK */
@@ -1354,14 +1364,14 @@ static int bcm2835_mmc_add_host(struct bcm2835_host *host)
 		if (ret == 0) {
 			host->dma_cfg_rx = cfg;
 
-			host->use_dma = true;
+			host->have_dma = true;
 		} else {
 			pr_err("%s: unable to configure DMA channel. "
-			       "Faling back to PIO\n",
+			       "Falling back to PIO\n",
 			       mmc_hostname(mmc));
 			dma_release_channel(host->dma_chan_rxtx);
 			host->dma_chan_rxtx = NULL;
-			host->use_dma = false;
+			host->have_dma = false;
 		}
 	}
 #endif
