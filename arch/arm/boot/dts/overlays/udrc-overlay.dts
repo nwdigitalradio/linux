@@ -11,7 +11,7 @@
     fragment@0 {
         target = <&i2s>;
         __overlay__ {
-            clocks = <&cprman BCM2835_CLOCK_PCM>;
+            clocks = <&clocks BCM2835_CLOCK_PCM>;
             clock-names = "pcm";
             status = "okay";
         };
@@ -42,7 +42,7 @@
             #address-cells = <1>;
             #size-cells = <0>;
             status = "okay";
-            clocks = <&cprman BCM2835_CLOCK_VPU>;
+            clocks = <&clocks BCM2835_CLOCK_VPU>;
             clock-frequency = <400000>;
 
             tlv320aic32x4: tlv320aic32x4@18 {
@@ -50,9 +50,9 @@
                 reg = <0x18>;
                 status = "okay";
 
-                clocks = <&cprman BCM2835_CLOCK_GP0>;
+                clocks = <&clocks BCM2835_CLOCK_GP0>;
                 clock-names = "mclk";
-                assigned-clocks = <&cprman BCM2835_CLOCK_GP0>;
+                assigned-clocks = <&clocks BCM2835_CLOCK_GP0>;
                 assigned-clock-rates = <25000000>;
                 
                 pinctrl-names = "default";
@@ -100,7 +100,7 @@
     };
 
     fragment@5 {
-        target = <&cprman>;
+        target = <&clocks>;
         __overlay__ {
             status = "okay";
         };
@@ -109,7 +109,7 @@
     fragment@6 {
     	target = <&sdhost>;
     	__overlay__ {
-    		clocks = <&cprman BCM2835_CLOCK_EMMC>;
+    		clocks = <&clocks BCM2835_CLOCK_EMMC>;
     	};
     };
 };
