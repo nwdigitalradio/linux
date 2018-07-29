@@ -22,6 +22,7 @@ dtbo-$(CONFIG_ARCH_BCM2835) += \
 	dionaudio-loco-v2.dtbo \
 	dpi18.dtbo \
 	dpi24.dtbo \
+	draws.dtbo \
 	dwc-otg.dtbo \
 	dwc2.dtbo \
 	enc28j60.dtbo \
