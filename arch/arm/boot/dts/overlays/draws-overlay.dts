@@ -101,7 +101,7 @@
 
                 adc_ch4: channel@4 {
                     reg = <4>;
-                    ti,gain = <2>;
+                    ti,gain = <1>;
                     ti,datarate = <4>;
                 };
 
@@ -167,6 +167,8 @@
     __overrides__ {
         draws_adc_ch3_gain = <&adc_ch3>,"ti,gain";
         draws_adc_ch3_datarate = <&adc_ch3>,"ti,datarate";
+        draws_adc_ch4_gain = <&adc_ch4>,"ti,gain";
+        draws_adc_ch4_datarate = <&adc_ch4>,"ti,datarate";
         draws_adc_ch6_gain = <&adc_ch6>,"ti,gain";
         draws_adc_ch6_datarate = <&adc_ch6>,"ti,datarate";
         draws_adc_ch7_gain = <&adc_ch7>,"ti,gain";
