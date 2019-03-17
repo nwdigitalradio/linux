@@ -335,6 +335,33 @@ static const struct clk_ops aic32x4_div_ops = {
     .recalc_rate = clk_aic32x4_div_recalc_rate,
 };
 
+static int clk_aic32x4_bdiv_set_parent(struct clk_hw *hw, u8 index)
+{
+    struct clk_aic32x4 *mux = to_clk_aic32x4(hw);
+
+    return regmap_update_bits(mux->regmap, AIC32X4_IFACE3, AIC32X4_BDIVCLK_MASK, index);
+}
+
+static u8 clk_aic32x4_bdiv_get_parent(struct clk_hw *hw)
+{
+    struct clk_aic32x4 *mux = to_clk_aic32x4(hw);
+    unsigned int val;
+
+    regmap_read(mux->regmap, AIC32X4_IFACE3, &val);
+
+    return val & AIC32X4_BDIVCLK_MASK;
+}
+
+static const struct clk_ops aic32x4_bdiv_ops = {
+    .enable = clk_aic32x4_div_enable,
+    .disable = clk_aic32x4_div_disable,
+    .set_parent = clk_aic32x4_bdiv_set_parent,
+    .get_parent = clk_aic32x4_bdiv_get_parent,
+    .set_rate = clk_aic32x4_div_set_rate,
+    .round_rate = clk_aic32x4_div_round_rate,
+    .recalc_rate = clk_aic32x4_div_recalc_rate,
+};
+
 static struct aic32x4_clkdesc aic32x4_clkdesc_array [] = {
 	{
 		.name = "pll",
@@ -377,6 +404,13 @@ static struct aic32x4_clkdesc aic32x4_clkdesc_array [] = {
         .num_parents = 1,
         .ops = &aic32x4_div_ops,
         .reg = AIC32X4_MADC,
+    },
+        {
+        .name = "bdiv",
+        .parent_names = (const char *[]) { "ndac", "mdac", "nadc", "madc" },
+        .num_parents = 4,
+        .ops = &aic32x4_bdiv_ops,
+        .reg = AIC32X4_BCLKN,
     },
 };
 
