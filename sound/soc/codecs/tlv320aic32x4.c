@@ -52,11 +52,11 @@ struct aic32x4_rate_divs {
 	u32 rate;
 	unsigned long pll_rate;
 	u16 dosr;
-	u8 ndac;
-	u8 mdac;
+	unsigned long ndac_rate;
+	unsigned long mdac_rate;
 	u8 aosr;
-	u8 nadc;
-	u8 madc;
+	unsigned long nadc_rate;
+	unsigned long madc_rate;
 	u8 blck_N;
 };
 
@@ -281,34 +281,34 @@ static const struct snd_kcontrol_new aic32x4_snd_controls[] = {
 
 static const struct aic32x4_rate_divs aic32x4_divs[] = {
 	/* 8k rate */
-    { 12000000, 8000, 57120000, 768, 5, 3, 128, 5, 18, 24 },
-    { 24000000, 8000, 57120000, 768, 15, 1, 64, 45, 4, 24 },
-    { 25000000, 8000, 32620000, 768, 15, 1, 64, 45, 4, 24 },
+	{ 12000000, 8000, 57120000, 768, 18432000, 6144000, 128, 18432000, 1024000, 24 },
+	{ 24000000, 8000, 57120000, 768, 6144000, 6144000, 64, 2048000, 512000, 24 },
+	{ 25000000, 8000, 32620000, 768, 6144000, 6144000, 64, 2048000, 512000, 24 },
 	/* 11.025k rate */
-    { 12000000, 11025, 44217600, 512, 8, 2, 128, 8, 8, 16 },
-    { 24000000, 11025, 44217600, 512, 16, 1, 64, 32, 4, 16 },
+	{ 12000000, 11025, 44217600, 512, 11289600, 5644800, 128, 11289600, 1411200, 16 },
+	{ 24000000, 11025, 44217600, 512, 5644800, 5644800, 64, 2822400, 705600, 16 },
 	/* 16k rate */
-    { 12000000, 16000, 57120000, 384, 5, 3, 128, 5, 9, 12 },
-    { 24000000, 16000, 57120000, 384, 15, 1, 64, 18, 5, 12 },
-    { 25000000, 16000, 32620000, 384, 15, 1, 64, 18, 5, 12 },
+	{ 12000000, 16000, 57120000, 384, 18432000, 6144000, 128, 18432000, 2048000, 12 },
+	{ 24000000, 16000, 57120000, 384, 6144000, 6144000, 64, 5120000, 1024000, 12 },
+	{ 25000000, 16000, 32620000, 384, 6144000, 6144000, 64, 5120000, 1024000, 12 },
 	/* 22.05k rate */
-    { 12000000, 22050, 44217600, 256, 4, 4, 128, 4, 8, 8 },
-    { 24000000, 22050, 44217600, 256, 16, 1, 64, 16, 4, 8 },
-    { 25000000, 22050, 19713750, 256, 16, 1, 64, 16, 4, 8 },
+	{ 12000000, 22050, 44217600, 256, 22579200, 5644800, 128, 22579200, 2822400, 8 },
+	{ 24000000, 22050, 44217600, 256, 5644800, 5644800, 64, 5644800, 1411200, 8 },
+	{ 25000000, 22050, 19713750, 256, 5644800, 5644800, 64, 5644800, 1411200, 8 },
 	/* 32k rate */
-    { 12000000, 32000, 14112000, 192, 2, 7, 64, 2, 21, 6 },
-    { 24000000, 32000, 14112000, 192, 7, 2, 64, 7, 6, 6 },
+	{ 12000000, 32000, 14112000, 192, 43008000, 6144000, 64, 43008000, 2048000, 6 },
+	{ 24000000, 32000, 14112000, 192, 12288000, 6144000, 64, 12288000, 2048000, 6 },
 	/* 44.1k rate */
-    { 12000000, 44100, 44217600, 128, 2, 8, 128, 2, 8, 4 },
-    { 24000000, 44100, 44217600, 128, 8, 2, 64, 8, 4, 4 },
-    { 25000000, 44100, 19713750, 128, 8, 2, 64, 8, 4, 4 },
+	{ 12000000, 44100, 44217600, 128, 45158400, 5644800, 128, 45158400, 5644800, 4 },
+	{ 24000000, 44100, 44217600, 128, 11289600, 5644800, 64, 11289600, 2822400, 4 },
+	{ 25000000, 44100, 19713750, 128, 11289600, 5644800, 64, 11289600, 2822400, 4 },
 	/* 48k rate */
-    { 12000000, 48000, 18432000, 128, 2, 8, 128, 2, 8, 4 },
-    { 24000000, 48000, 18432000, 128, 8, 2, 64, 8, 4, 4 },
-    { 25000000, 48000, 75626250, 128, 8, 2, 64, 8, 4, 4 },
+	{ 12000000, 48000, 18432000, 128, 49152000, 6144000, 128, 49152000, 6144000, 4 },
+	{ 24000000, 48000, 18432000, 128, 12288000, 6144000, 64, 12288000, 3072000, 4 },
+	{ 25000000, 48000, 75626250, 128, 12288000, 6144000, 64, 12288000, 3072000, 4 },
 
 	/* 96k rate */
-    { 25000000, 96000, 75626250, 64, 4, 4, 64, 4, 4, 1 },
+	{ 25000000, 96000, 75626250, 64, 24576000, 6144000, 64, 24576000, 6144000, 1 },
 };
 
 static const struct snd_kcontrol_new hpl_output_mixer_controls[] = {
@@ -669,15 +669,19 @@ static int aic32x4_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 }
 
 static int aic32x4_setup_clocks(struct snd_soc_component *component,
-                unsigned int sample_rate,
-                unsigned int parent_rate)
+				unsigned int sample_rate,
+				unsigned int parent_rate)
 {
 	int i;
 	int ret;
 
 	struct clk_bulk_data clocks [] = {
-        { .id = "pll" },
-    };
+		{ .id = "pll" },
+		{ .id = "nadc" },
+		{ .id = "madc" },
+		{ .id = "ndac" },
+		{ .id = "mdac" },
+	};
 
 	i = aic32x4_get_divs(parent_rate, sample_rate);
 	if (i < 0) {
@@ -685,35 +689,23 @@ static int aic32x4_setup_clocks(struct snd_soc_component *component,
 		return i;
 	}
 
-    ret = devm_clk_bulk_get(component->dev, ARRAY_SIZE(clocks), clocks);
-    if(ret)
-        return ret;
+	ret = devm_clk_bulk_get(component->dev, ARRAY_SIZE(clocks), clocks);
+	if(ret)
+		return ret;
 
-    clk_set_rate(clocks[0].clk, sample_rate);
+	clk_set_rate(clocks[0].clk, aic32x4_divs[i].pll_rate);
+	clk_set_rate(clocks[1].clk, aic32x4_divs[i].nadc_rate);
+	clk_set_rate(clocks[2].clk, aic32x4_divs[i].madc_rate);
+	clk_set_rate(clocks[3].clk, aic32x4_divs[i].ndac_rate);
+	clk_set_rate(clocks[4].clk, aic32x4_divs[i].mdac_rate);
 
 	/* DAC_MOD_CLK as BDIV_CLKIN */
 	snd_soc_component_update_bits(component, AIC32X4_IFACE3, AIC32X4_BDIVCLK_MASK,
 				AIC32X4_DACMOD2BCLK << AIC32X4_BDIVCLK_SHIFT);
 
-	/* NDAC divider value */
-	snd_soc_component_update_bits(component, AIC32X4_NDAC,
-				AIC32X4_NDAC_MASK, aic32x4_divs[i].ndac);
-
-	/* MDAC divider value */
-	snd_soc_component_update_bits(component, AIC32X4_MDAC,
-				AIC32X4_MDAC_MASK, aic32x4_divs[i].mdac);
-
 	/* DOSR MSB & LSB values */
 	snd_soc_component_write(component, AIC32X4_DOSRMSB, aic32x4_divs[i].dosr >> 8);
 	snd_soc_component_write(component, AIC32X4_DOSRLSB, (aic32x4_divs[i].dosr & 0xff));
-
-	/* NADC divider value */
-	snd_soc_component_update_bits(component, AIC32X4_NADC,
-				AIC32X4_NADC_MASK, aic32x4_divs[i].nadc);
-
-	/* MADC divider value */
-	snd_soc_component_update_bits(component, AIC32X4_MADC,
-				AIC32X4_MADC_MASK, aic32x4_divs[i].madc);
 
 	/* AOSR value */
 	snd_soc_component_write(component, AIC32X4_AOSR, aic32x4_divs[i].aosr);
@@ -726,15 +718,15 @@ static int aic32x4_setup_clocks(struct snd_soc_component *component,
 }
 
 static int aic32x4_hw_params(struct snd_pcm_substream *substream,
-			     struct snd_pcm_hw_params *params,
-			     struct snd_soc_dai *dai)
+				 struct snd_pcm_hw_params *params,
+				 struct snd_soc_dai *dai)
 {
 	struct snd_soc_component *component = dai->component;
 	struct aic32x4_priv *aic32x4 = snd_soc_component_get_drvdata(component);
 	u8 iface1_reg = 0;
 	u8 dacsetup_reg = 0;
 
-    aic32x4_setup_clocks(component, params_rate(params), aic32x4->sysclk);
+	aic32x4_setup_clocks(component, params_rate(params), aic32x4->sysclk);
 
 	switch (params_width(params)) {
 	case 16:
@@ -942,12 +934,13 @@ static int aic32x4_component_probe(struct snd_soc_component *component)
 	int ret;
 
 	struct clk_bulk_data clocks [] = {
-	    { .id = "codec_clkin" },
-    };
+		{ .id = "codec_clkin" },
+		{ .id = "pll" },
+	};
 
-    ret = devm_clk_bulk_get(component->dev, ARRAY_SIZE(clocks), clocks);
-    if (ret)
-        return ret;
+	ret = devm_clk_bulk_get(component->dev, ARRAY_SIZE(clocks), clocks);
+	if (ret)
+		return ret;
 
 	if (gpio_is_valid(aic32x4->rstn_gpio)) {
 		ndelay(10);
@@ -959,7 +952,7 @@ static int aic32x4_component_probe(struct snd_soc_component *component)
 	if (aic32x4->setup)
 		aic32x4_setup_gpios(component);
 
-    clk_set_parent(clocks[0].clk, clocks[1].clk);
+	clk_set_parent(clocks[0].clk, clocks[1].clk);
 
 	/* Power platform configuration */
 	if (aic32x4->power_cfg & AIC32X4_PWR_MICBIAS_2075_LDOIN) {
