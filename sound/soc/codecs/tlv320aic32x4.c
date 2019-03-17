@@ -668,6 +668,20 @@ static int aic32x4_set_dai_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 	return 0;
 }
 
+static int aic32x4_set_aosr(struct snd_soc_component *component, u8 aosr)
+{
+	return snd_soc_component_write(component, AIC32X4_AOSR, aosr);
+}
+
+static int aic32x4_set_dosr(struct snd_soc_component *component, u16 dosr)
+{
+	snd_soc_component_write(component, AIC32X4_DOSRMSB, dosr >> 8);
+	snd_soc_component_write(component, AIC32X4_DOSRLSB,
+		      (dosr & 0xff));
+
+	return 0;
+}
+
 static int aic32x4_setup_clocks(struct snd_soc_component *component,
 				unsigned int sample_rate,
 				unsigned int parent_rate)
@@ -700,13 +714,8 @@ static int aic32x4_setup_clocks(struct snd_soc_component *component,
 	clk_set_rate(clocks[3].clk, aic32x4_divs[i].ndac_rate);
 	clk_set_rate(clocks[4].clk, aic32x4_divs[i].mdac_rate);
 	clk_set_rate(clocks[5].clk, aic32x4_divs[i].bdiv_rate);
-
-	/* DOSR MSB & LSB values */
-	snd_soc_component_write(component, AIC32X4_DOSRMSB, aic32x4_divs[i].dosr >> 8);
-	snd_soc_component_write(component, AIC32X4_DOSRLSB, (aic32x4_divs[i].dosr & 0xff));
-
-	/* AOSR value */
-	snd_soc_component_write(component, AIC32X4_AOSR, aic32x4_divs[i].aosr);
+	aic32x4_set_aosr(component, aic32x4_divs[i].aosr);
+	aic32x4_set_dosr(component, aic32x4_divs[i].dosr);
 
 	return 0;
 }
