@@ -769,6 +769,7 @@ static int aic32x4_set_bias_level(struct snd_soc_component *component,
 				  enum snd_soc_bias_level level)
 {
 	int ret;
+	struct snd_soc_dapm_context *dapm = snd_soc_component_get_dapm(component);
 
 	struct clk_bulk_data clocks [] = {
 		{ .id = "madc" },
@@ -791,7 +792,8 @@ static int aic32x4_set_bias_level(struct snd_soc_component *component,
 	case SND_SOC_BIAS_PREPARE:
 		break;
 	case SND_SOC_BIAS_STANDBY:
-		clk_bulk_disable_unprepare(ARRAY_SIZE(clocks), clocks);
+	    if(dapm->bias_level != SND_SOC_BIAS_OFF)
+		    clk_bulk_disable_unprepare(ARRAY_SIZE(clocks), clocks);
 		break;
 	case SND_SOC_BIAS_OFF:
 		break;
